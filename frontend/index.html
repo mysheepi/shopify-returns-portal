@@ -1,0 +1,660 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Mysheepi · Returns Portal</title>
+
+<!-- AG Grid Community -->
+<script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/dist/ag-grid-community.min.js"></script>
+<link  href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-grid.css"        rel="stylesheet">
+<link  href="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/styles/ag-theme-alpine.css" rel="stylesheet">
+
+<!-- Chart.js -->
+<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.3/dist/chart.umd.min.js"></script>
+
+<!-- Tom Select (multi-select SKU picker) -->
+<link  href="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/css/tom-select.min.css" rel="stylesheet">
+<script src="https://cdn.jsdelivr.net/npm/tom-select@2.3.1/dist/js/tom-select.complete.min.js"></script>
+
+<!-- Alpine.js -->
+<script defer src="https://cdn.jsdelivr.net/npm/alpinejs@3.14.1/dist/cdn.min.js"></script>
+
+<style>
+  *, *::before, *::after { box-sizing: border-box; margin: 0; padding: 0; }
+
+  :root {
+    --brand:   #1a1a2e;
+    --accent:  #4f8ef7;
+    --green:   #22c55e;
+    --amber:   #f59e0b;
+    --red:     #ef4444;
+    --bg:      #f8fafc;
+    --surface: #ffffff;
+    --border:  #e2e8f0;
+    --text:    #1e293b;
+    --muted:   #64748b;
+  }
+
+  body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+
+  /* ── Login ── */
+  .login-wrap {
+    min-height: 100vh; display: flex; align-items: center; justify-content: center;
+  }
+  .login-card {
+    background: var(--surface); border: 1px solid var(--border); border-radius: 12px;
+    padding: 40px 48px; width: 360px; box-shadow: 0 4px 24px rgba(0,0,0,.07);
+  }
+  .login-card h1 { font-size: 20px; font-weight: 700; margin-bottom: 6px; }
+  .login-card p  { color: var(--muted); margin-bottom: 28px; font-size: 13px; }
+  .login-card label { display: block; font-size: 12px; font-weight: 600; margin-bottom: 6px; color: var(--muted); letter-spacing: .04em; }
+  .login-card input[type=password] {
+    width: 100%; padding: 9px 12px; border: 1px solid var(--border); border-radius: 7px;
+    font-size: 14px; outline: none; transition: border-color .15s;
+  }
+  .login-card input[type=password]:focus { border-color: var(--accent); }
+  .login-card .error { color: var(--red); font-size: 12px; margin-top: 8px; min-height: 16px; }
+
+  /* ── Buttons ── */
+  .btn {
+    display: inline-flex; align-items: center; gap: 6px;
+    padding: 8px 16px; border-radius: 7px; font-size: 13px;
+    font-weight: 600; cursor: pointer; border: none; transition: opacity .15s;
+  }
+  .btn:disabled { opacity: .45; cursor: not-allowed; }
+  .btn-primary  { background: var(--accent); color: #fff; }
+  .btn-outline  { background: var(--surface); color: var(--text); border: 1px solid var(--border); }
+  .btn-danger   { background: #fff0f0; color: var(--red); border: 1px solid #fecaca; }
+  .btn:not(:disabled):hover { opacity: .85; }
+  .btn-full { width: 100%; justify-content: center; margin-top: 16px; }
+
+  /* ── App shell ── */
+  .app { display: flex; flex-direction: column; min-height: 100vh; }
+
+  /* ── Header ── */
+  header {
+    background: var(--brand); color: #fff; padding: 0 24px;
+    height: 52px; display: flex; align-items: center; justify-content: space-between;
+    box-shadow: 0 2px 8px rgba(0,0,0,.2);
+  }
+  header h1 { font-size: 16px; font-weight: 700; letter-spacing: .02em; }
+  .header-right { display: flex; align-items: center; gap: 12px; }
+
+  /* ── Sync badge ── */
+  .sync-badge {
+    font-size: 12px; padding: 3px 10px; border-radius: 99px; font-weight: 600;
+  }
+  .sync-badge.idle    { background: rgba(255,255,255,.12); color: rgba(255,255,255,.7); }
+  .sync-badge.running { background: #fef3c7; color: #92400e; animation: pulse 1.5s infinite; }
+  .sync-badge.done    { background: #d1fae5; color: #065f46; }
+  .sync-badge.error   { background: #fee2e2; color: #991b1b; }
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:.6} }
+
+  /* ── Toolbar ── */
+  .toolbar {
+    background: var(--surface); border-bottom: 1px solid var(--border);
+    padding: 12px 24px; display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap;
+  }
+  .filter-group { display: flex; flex-direction: column; gap: 4px; }
+  .filter-group label { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
+  .filter-group select, .filter-group input[type=month] {
+    padding: 7px 10px; border: 1px solid var(--border); border-radius: 7px;
+    font-size: 13px; background: var(--bg); min-width: 130px;
+  }
+  .sku-select-wrap { min-width: 320px; max-width: 480px; }
+
+  /* Tom Select override */
+  .ts-wrapper.multi .ts-control { border-radius: 7px; border-color: var(--border); min-height: 36px; }
+
+  /* ── Tabs ── */
+  .tabs { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; gap: 0; }
+  .tab-btn {
+    padding: 12px 20px; font-size: 13px; font-weight: 600; cursor: pointer;
+    border: none; background: none; color: var(--muted);
+    border-bottom: 2px solid transparent; margin-bottom: -1px; transition: color .15s;
+  }
+  .tab-btn.active { color: var(--accent); border-bottom-color: var(--accent); }
+
+  /* ── Content area ── */
+  .content { flex: 1; padding: 20px 24px; }
+
+  /* ── Table ── */
+  .grid-wrap { height: calc(100vh - 220px); min-height: 400px; }
+
+  /* AG Grid cell badges */
+  .closed-badge   { display:inline-block; width:18px; height:18px; line-height:18px; text-align:center; border-radius:50%; font-size:11px; }
+  .badge-closed   { background:#d1fae5; color:#065f46; }
+  .badge-open     { background:#fef3c7; color:#92400e; }
+
+  /* ── Chart ── */
+  .chart-wrap { background: var(--surface); border: 1px solid var(--border); border-radius: 10px; padding: 20px; max-height: calc(100vh - 220px); }
+  .chart-wrap canvas { max-height: 500px; }
+  .chart-hint { color: var(--muted); font-size: 13px; margin-bottom: 14px; }
+
+  /* ── Settings panel ── */
+  .settings-overlay {
+    position: fixed; inset: 0; background: rgba(0,0,0,.35); z-index: 100;
+    display: flex; align-items: center; justify-content: center;
+  }
+  .settings-card {
+    background: var(--surface); border-radius: 12px; padding: 32px;
+    width: 380px; box-shadow: 0 8px 40px rgba(0,0,0,.15);
+  }
+  .settings-card h2 { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
+  .settings-card p  { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
+  .settings-row     { display: flex; flex-direction: column; gap: 6px; margin-bottom: 20px; }
+  .settings-row label { font-size: 12px; font-weight: 600; color: var(--muted); letter-spacing:.04em; }
+  .settings-row input[type=number] {
+    padding: 9px 12px; border: 1px solid var(--border); border-radius: 7px;
+    font-size: 14px; width: 100%; outline: none;
+  }
+  .settings-row input:focus { border-color: var(--accent); }
+  .settings-hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .settings-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
+
+  /* ── Empty / loading states ── */
+  .state-box {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 300px; gap: 12px; color: var(--muted);
+  }
+  .state-box span { font-size: 36px; }
+  .state-box p    { font-size: 14px; }
+
+  /* ── Responsive ── */
+  @media (max-width: 640px) {
+    .toolbar { gap: 10px; }
+    .sku-select-wrap { min-width: 100%; max-width: 100%; }
+  }
+</style>
+</head>
+
+<body x-data="portal()" x-init="init()">
+
+<!-- ════════ LOGIN ════════ -->
+<div class="login-wrap" x-show="!authenticated" x-cloak>
+  <div class="login-card">
+    <h1>Mysheepi Returns</h1>
+    <p>Internal analytics portal</p>
+    <label>PASSWORD</label>
+    <input type="password" x-model="password" placeholder="Enter password"
+           @keydown.enter="login()" :disabled="loggingIn" autofocus>
+    <p class="error" x-text="loginError"></p>
+    <button class="btn btn-primary btn-full" @click="login()" :disabled="loggingIn || !password">
+      <span x-text="loggingIn ? 'Checking…' : 'Sign in'"></span>
+    </button>
+  </div>
+</div>
+
+<!-- ════════ APP ════════ -->
+<div class="app" x-show="authenticated" x-cloak>
+
+  <!-- Header -->
+  <header>
+    <h1>Mysheepi · Returns Portal</h1>
+    <div class="header-right">
+      <span class="sync-badge"
+            :class="syncBadgeClass()"
+            x-text="syncBadgeLabel()"></span>
+      <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)"
+              @click="triggerSync()" :disabled="syncRunning">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
+        Sync
+      </button>
+      <button class="btn btn-outline" style="color:#fff;border-color:rgba(255,255,255,.3)"
+              @click="showSettings = true">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1-2.83 2.83l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-4 0v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1 0-4h.09A1.65 1.65 0 0 0 4.6 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 2.83-2.83l.06.06A1.65 1.65 0 0 0 9 4.68a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 4 0v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 2.83l-.06.06A1.65 1.65 0 0 0 19.4 9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 0 4h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+        Settings
+      </button>
+    </div>
+  </header>
+
+  <!-- Toolbar -->
+  <div class="toolbar">
+    <div class="filter-group sku-select-wrap">
+      <label>SKUs</label>
+      <select id="sku-select" multiple placeholder="All SKUs…"></select>
+    </div>
+    <div class="filter-group">
+      <label>From month</label>
+      <input type="month" x-model="filterFrom" @change="loadData()">
+    </div>
+    <div class="filter-group">
+      <label>To month</label>
+      <input type="month" x-model="filterTo" @change="loadData()">
+    </div>
+    <div class="filter-group" style="margin-left:auto">
+      <label>&nbsp;</label>
+      <button class="btn btn-outline" @click="exportCsv()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export CSV
+      </button>
+    </div>
+  </div>
+
+  <!-- Tabs -->
+  <div class="tabs">
+    <button class="tab-btn" :class="{active: activeTab==='table'}" @click="activeTab='table'">Table</button>
+    <button class="tab-btn" :class="{active: activeTab==='chart'}" @click="activeTab='chart'; renderChart()">Chart</button>
+  </div>
+
+  <!-- Content -->
+  <div class="content">
+
+    <!-- Loading -->
+    <div class="state-box" x-show="loading">
+      <span>⏳</span>
+      <p>Loading data…</p>
+    </div>
+
+    <!-- Empty -->
+    <div class="state-box" x-show="!loading && rows.length === 0 && activeTab === 'table'">
+      <span>📭</span>
+      <p>No data for the selected filters. Try syncing or adjusting the date range.</p>
+    </div>
+
+    <!-- Table -->
+    <div class="grid-wrap" x-show="!loading && activeTab === 'table' && rows.length > 0"
+         id="ag-grid"></div>
+
+    <!-- Chart -->
+    <div class="chart-wrap" x-show="!loading && activeTab === 'chart'">
+      <p class="chart-hint">Showing up to 8 SKUs. Select specific SKUs above to compare.</p>
+      <canvas id="return-chart"></canvas>
+    </div>
+
+  </div>
+</div>
+
+<!-- ════════ SETTINGS PANEL ════════ -->
+<div class="settings-overlay" x-show="showSettings" x-cloak @click.self="showSettings=false">
+  <div class="settings-card">
+    <h2>Settings</h2>
+    <p>Changes are applied to all historical data immediately after saving.</p>
+
+    <div class="settings-row">
+      <label>RETURN BUFFER (DAYS)</label>
+      <input type="number" x-model.number="bufferInput" min="0" max="60">
+      <span class="settings-hint">
+        Added to each return window to account for delivery and refund processing time.
+        Effective windows: <strong x-text="30 + bufferInput"></strong>d (30-day SKUs)
+        and <strong x-text="100 + bufferInput"></strong>d (100-day SKUs).
+      </span>
+    </div>
+
+    <div class="settings-actions">
+      <button class="btn btn-outline" @click="showSettings=false">Cancel</button>
+      <button class="btn btn-primary" @click="saveSettings()" :disabled="savingSettings">
+        <span x-text="savingSettings ? 'Saving…' : 'Save & recalculate'"></span>
+      </button>
+    </div>
+  </div>
+</div>
+
+<script>
+// ── Palette for chart lines ─────────────────────────────────────────────────
+const PALETTE = [
+  '#4f8ef7','#f59e0b','#22c55e','#ef4444','#a855f7',
+  '#06b6d4','#f97316','#84cc16',
+];
+
+function portal() {
+  return {
+    // Auth
+    authenticated: false,
+    password: '',
+    loggingIn: false,
+    loginError: '',
+
+    // Data
+    rows: [],
+    allSkus: [],
+    loading: false,
+
+    // Filters
+    filterFrom: '2024-07',
+    filterTo:   '',
+    selectedSkus: [],
+    tomSelect: null,
+
+    // UI
+    activeTab: 'table',
+    gridApi: null,
+    chartInstance: null,
+
+    // Sync
+    syncRunning: false,
+    syncType: null,
+    syncOrdersDone: 0,
+    syncError: null,
+    lastSyncAt: null,
+    pollInterval: null,
+
+    // Settings
+    showSettings: false,
+    bufferInput: 10,
+    savingSettings: false,
+
+    // ── Init ──────────────────────────────────────────────────────────────
+    async init() {
+      // Restore session
+      const saved = sessionStorage.getItem('portal_pw');
+      if (saved) {
+        this.password = saved;
+        await this.login();
+      }
+
+      // Default to-month = last complete month
+      const d = new Date();
+      d.setDate(1); d.setMonth(d.getMonth() - 1);
+      this.filterTo = d.toISOString().slice(0, 7);
+    },
+
+    // ── Auth ─────────────────────────────────────────────────────────────
+    async login() {
+      this.loggingIn = true;
+      this.loginError = '';
+      try {
+        const r = await this.api('POST', '/api/auth/verify');
+        if (r.ok) {
+          sessionStorage.setItem('portal_pw', this.password);
+          this.authenticated = true;
+          await Promise.all([this.loadSkus(), this.loadSettings(), this.checkSyncStatus()]);
+          await this.loadData();
+          this.$nextTick(() => this.initGrid());
+        }
+      } catch(e) {
+        this.loginError = 'Wrong password.';
+        sessionStorage.removeItem('portal_pw');
+      }
+      this.loggingIn = false;
+    },
+
+    // ── API helper ────────────────────────────────────────────────────────
+    async api(method, path, body) {
+      const opts = {
+        method,
+        headers: {
+          'X-Portal-Password': this.password,
+          'Content-Type': 'application/json',
+        },
+      };
+      if (body) opts.body = JSON.stringify(body);
+      const r = await fetch(path, opts);
+      if (r.status === 401) throw new Error('Unauthorized');
+      if (!r.ok) {
+        const t = await r.text();
+        throw new Error(t || r.statusText);
+      }
+      return r.json();
+    },
+
+    async apiFetch(path) {
+      const r = await fetch(path, {
+        headers: { 'X-Portal-Password': this.password },
+      });
+      if (!r.ok) throw new Error(r.statusText);
+      return r.blob();
+    },
+
+    // ── Load helpers ──────────────────────────────────────────────────────
+    async loadSkus() {
+      this.allSkus = await this.api('GET', '/api/skus');
+      this.$nextTick(() => this.initTomSelect());
+    },
+
+    async loadSettings() {
+      const s = await this.api('GET', '/api/settings');
+      this.bufferInput = s.return_buffer_days;
+    },
+
+    async loadData() {
+      this.loading = true;
+      const params = new URLSearchParams();
+      if (this.selectedSkus.length) params.set('skus', this.selectedSkus.join(','));
+      if (this.filterFrom) params.set('from', this.filterFrom);
+      if (this.filterTo)   params.set('to',   this.filterTo);
+
+      try {
+        this.rows = await this.api('GET', `/api/returns?${params}`);
+        if (this.gridApi) this.gridApi.setGridOption('rowData', this.rows);
+        if (this.activeTab === 'chart') this.$nextTick(() => this.renderChart());
+      } finally {
+        this.loading = false;
+      }
+    },
+
+    // ── AG Grid ───────────────────────────────────────────────────────────
+    initGrid() {
+      const closedRenderer = params => {
+        if (params.value === null || params.value === undefined) return '';
+        const closed = params.value;
+        const icon   = closed ? '✓' : '⏳';
+        const cls    = closed ? 'badge-closed' : 'badge-open';
+        return `<span class="closed-badge ${cls}">${icon}</span>`;
+      };
+
+      const pctRenderer = params => {
+        if (params.value === null || params.value === undefined) return '—';
+        return (params.value * 100).toFixed(1) + '%';
+      };
+
+      const columnDefs = [
+        { field: 'sku',          headerName: 'SKU',          pinned: 'left', width: 220, filter: true },
+        { field: 'order_month',  headerName: 'Month',         width: 110, sort: 'asc' },
+        { field: 'return_window_days', headerName: 'Policy', width: 80,
+          valueFormatter: p => p.value + 'd' },
+        { field: 'total_ordered', headerName: 'Ordered',      width: 100, type: 'numericColumn' },
+
+        // 30-day window group
+        { headerName: '30-day window', children: [
+          { field: 'returned_30d',   headerName: 'Returned', width: 100, type: 'numericColumn' },
+          { field: 'return_rate_30d', headerName: 'Rate',    width: 90,  cellRenderer: pctRenderer },
+          { field: 'is_30d_closed',  headerName: 'Status',  width: 80,  cellRenderer: closedRenderer },
+        ]},
+
+        // 100-day window group
+        { headerName: '100-day window', children: [
+          { field: 'returned_100d',   headerName: 'Returned', width: 100, type: 'numericColumn' },
+          { field: 'return_rate_100d', headerName: 'Rate',    width: 90,  cellRenderer: pctRenderer },
+          { field: 'is_100d_closed',  headerName: 'Status',  width: 80,  cellRenderer: closedRenderer },
+        ]},
+      ];
+
+      const gridOptions = {
+        columnDefs,
+        rowData: this.rows,
+        defaultColDef: {
+          sortable: true, resizable: true,
+          cellStyle: { display: 'flex', alignItems: 'center' },
+        },
+        rowHeight: 36,
+        headerHeight: 38,
+        groupHeaderHeight: 32,
+        suppressMovableColumns: false,
+        animateRows: true,
+      };
+
+      const el = document.getElementById('ag-grid');
+      this.gridApi = agGrid.createGrid(el, gridOptions);
+    },
+
+    // ── Tom Select ────────────────────────────────────────────────────────
+    initTomSelect() {
+      if (this.tomSelect) { this.tomSelect.destroy(); }
+      const options = this.allSkus.map(s => ({
+        value: s.sku,
+        text:  s.sku,
+        label: s.return_window_days === 100 ? '100d' : '30d',
+      }));
+
+      this.tomSelect = new TomSelect('#sku-select', {
+        plugins: ['remove_button'],
+        options,
+        optionClass: 'option',
+        render: {
+          option: (data) =>
+            `<div class="option">${data.text} <span style="color:var(--muted);font-size:11px">${data.label}</span></div>`,
+        },
+        onchange: (vals) => {
+          this.selectedSkus = vals;
+          this.loadData();
+        },
+      });
+    },
+
+    // ── Chart ─────────────────────────────────────────────────────────────
+    renderChart() {
+      if (this.chartInstance) { this.chartInstance.destroy(); this.chartInstance = null; }
+
+      const skusToShow = this.selectedSkus.length
+        ? this.selectedSkus.slice(0, 8)
+        : [...new Set(this.rows.map(r => r.sku))].slice(0, 8);
+
+      const months = [...new Set(this.rows.map(r => r.order_month))].sort();
+
+      const datasets = [];
+      skusToShow.forEach((sku, idx) => {
+        const color = PALETTE[idx % PALETTE.length];
+        const skuRows = this.rows.filter(r => r.sku === sku);
+        const byMonth = Object.fromEntries(skuRows.map(r => [r.order_month, r]));
+
+        datasets.push({
+          label: `${sku} (30d)`,
+          data: months.map(m => byMonth[m] ? (byMonth[m].return_rate_30d * 100).toFixed(2) : null),
+          borderColor: color,
+          backgroundColor: color + '22',
+          borderWidth: 2,
+          pointRadius: 3,
+          tension: 0.3,
+          spanGaps: false,
+        });
+        datasets.push({
+          label: `${sku} (100d)`,
+          data: months.map(m => byMonth[m] ? (byMonth[m].return_rate_100d * 100).toFixed(2) : null),
+          borderColor: color,
+          backgroundColor: 'transparent',
+          borderWidth: 2,
+          borderDash: [5, 4],
+          pointRadius: 3,
+          tension: 0.3,
+          spanGaps: false,
+        });
+      });
+
+      const ctx = document.getElementById('return-chart').getContext('2d');
+      this.chartInstance = new Chart(ctx, {
+        type: 'line',
+        data: { labels: months, datasets },
+        options: {
+          responsive: true,
+          interaction: { mode: 'index', intersect: false },
+          plugins: {
+            legend: { position: 'bottom', labels: { boxWidth: 12, font: { size: 11 } } },
+            tooltip: {
+              callbacks: {
+                label: ctx => `${ctx.dataset.label}: ${ctx.parsed.y ?? '—'}%`,
+              },
+            },
+          },
+          scales: {
+            y: {
+              title: { display: true, text: 'Return Rate (%)' },
+              ticks: { callback: v => v + '%' },
+            },
+            x: { title: { display: true, text: 'Order Month' } },
+          },
+        },
+      });
+    },
+
+    // ── CSV export ────────────────────────────────────────────────────────
+    async exportCsv() {
+      const params = new URLSearchParams();
+      if (this.selectedSkus.length) params.set('skus', this.selectedSkus.join(','));
+      if (this.filterFrom) params.set('from', this.filterFrom);
+      if (this.filterTo)   params.set('to',   this.filterTo);
+
+      const blob = await this.apiFetch(`/api/returns/export?${params}`);
+      const url  = URL.createObjectURL(blob);
+      const a    = Object.assign(document.createElement('a'), { href: url, download: 'returns_export.csv' });
+      a.click();
+      URL.revokeObjectURL(url);
+    },
+
+    // ── Sync ─────────────────────────────────────────────────────────────
+    async triggerSync() {
+      try {
+        await this.api('POST', '/api/sync/trigger');
+        this.startSyncPoll();
+      } catch(e) {
+        alert('Sync failed to start: ' + e.message);
+      }
+    },
+
+    async checkSyncStatus() {
+      try {
+        const s = await this.api('GET', '/api/sync/status');
+        const live = s.live;
+        this.syncRunning   = live.running;
+        this.syncType      = live.type;
+        this.syncOrdersDone = live.orders_synced || 0;
+        this.syncError     = live.error;
+
+        if (s.last_completed) {
+          this.lastSyncAt = s.last_completed.completed_at;
+        }
+
+        if (live.running) {
+          this.startSyncPoll();
+        } else if (!live.running && this.pollInterval) {
+          this.stopSyncPoll();
+          await this.loadData();
+        }
+      } catch(e) { /* ignore */ }
+    },
+
+    startSyncPoll() {
+      if (this.pollInterval) return;
+      this.pollInterval = setInterval(() => this.checkSyncStatus(), 3000);
+    },
+
+    stopSyncPoll() {
+      if (this.pollInterval) { clearInterval(this.pollInterval); this.pollInterval = null; }
+    },
+
+    syncBadgeClass() {
+      if (this.syncError)   return 'sync-badge error';
+      if (this.syncRunning) return 'sync-badge running';
+      if (this.lastSyncAt)  return 'sync-badge done';
+      return 'sync-badge idle';
+    },
+
+    syncBadgeLabel() {
+      if (this.syncError)   return '✕ Sync error';
+      if (this.syncRunning) return `⟳ Syncing… ${this.syncOrdersDone} orders`;
+      if (this.lastSyncAt) {
+        const d = new Date(this.lastSyncAt);
+        return `✓ Synced ${d.toLocaleDateString()} ${d.toLocaleTimeString([], {hour:'2-digit',minute:'2-digit'})}`;
+      }
+      return 'Never synced';
+    },
+
+    // ── Settings ─────────────────────────────────────────────────────────
+    async saveSettings() {
+      this.savingSettings = true;
+      try {
+        await this.api('POST', '/api/settings', { return_buffer_days: this.bufferInput });
+        this.showSettings = false;
+        // Wait for reaggregation then refresh table
+        setTimeout(() => this.loadData(), 1500);
+      } catch(e) {
+        alert('Failed to save: ' + e.message);
+      }
+      this.savingSettings = false;
+    },
+  };
+}
+</script>
+</body>
+</html>
