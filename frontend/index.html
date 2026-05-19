@@ -264,7 +264,7 @@
   <!-- Tabs -->
   <div class="tabs">
     <button class="tab-btn" :class="{active: activeTab==='table'}" @click="activeTab='table'; $nextTick(() => gridApi && gridApi.autoSizeAllColumns())">Table</button>
-    <button class="tab-btn" :class="{active: activeTab==='chart'}" @click="activeTab='chart'; renderChart()">Chart</button>
+    <button class="tab-btn" :class="{active: activeTab==='chart'}" @click="activeTab='chart'; clearChartFilter(viewLevel === 'sku' ? 'product' : 'sku'); renderChart()">Chart</button>
   </div>
 
   <!-- Content -->
@@ -702,8 +702,24 @@ function portal() {
       }));
     },
 
+    clearChartFilter(which) {
+      if (which === 'product' && this.selectedProducts.length) {
+        this.selectedProducts = [];
+        if (this.tomSelectProduct) this.tomSelectProduct.clear(true);
+      }
+      if (which === 'sku' && this.selectedSkus.length) {
+        this.selectedSkus = [];
+        if (this.tomSelect) this.tomSelect.clear(true);
+        this.loadData();
+      }
+    },
+
     switchView(level) {
       if (this.viewLevel === level) return;
+      // On chart tab, clear the filter that is about to become greyed out
+      if (this.activeTab === 'chart') {
+        this.clearChartFilter(level === 'sku' ? 'product' : 'sku');
+      }
       this.viewLevel = level;
       if (!this.gridApi) return;
       // Rebuild renderers so buildColumnDefs can reference them
