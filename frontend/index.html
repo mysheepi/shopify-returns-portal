@@ -3,7 +3,7 @@
 <head>
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Mysheepi · Returns Portal</title>
+<title>Mysheepi Return Data</title>
 
 <!-- AG Grid Community -->
 <script src="https://cdn.jsdelivr.net/npm/ag-grid-community@31.3.2/dist/ag-grid-community.min.js"></script>
@@ -198,7 +198,7 @@
 
   <!-- Header -->
   <header>
-    <h1>Mysheepi · Returns Portal</h1>
+    <h1>Mysheepi Return Data</h1>
     <div class="header-right">
       <span class="sync-badge"
             :class="syncBadgeClass()"
@@ -229,6 +229,14 @@
     <div class="filter-group">
       <label>To month</label>
       <input type="month" x-model="filterTo" @change="loadData()">
+    </div>
+    <div class="filter-group">
+      <label>&nbsp;</label>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-outline" @click="setRange(1)">Last Month</button>
+        <button class="btn btn-outline" @click="setRange(3)">Last 3 Months</button>
+        <button class="btn btn-outline" @click="setRange(6)">Last 6 Months</button>
+      </div>
     </div>
     <div class="filter-group" style="margin-left:auto">
       <label>&nbsp;</label>
@@ -407,6 +415,16 @@ function portal() {
     async loadSettings() {
       const s = await this.api('GET', '/api/settings');
       this.bufferInput = s.return_buffer_days;
+    },
+
+    setRange(months) {
+      const now  = new Date();
+      const to   = new Date(now.getFullYear(), now.getMonth() - 1, 1); // last complete month
+      const from = new Date(now.getFullYear(), now.getMonth() - months, 1); // last month − (months−1)
+      const fmt  = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      this.filterFrom = fmt(from);
+      this.filterTo   = fmt(to);
+      this.loadData();
     },
 
     async loadData() {
