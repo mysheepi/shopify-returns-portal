@@ -1015,8 +1015,8 @@ function portal() {
     resizeColumns(delay = 0) {
       const doResize = () => {
         if (!this.gridApi) return;
-        this.fitTextColumns();
-        this.gridApi.autoSizeAllColumns();
+        this.gridApi.autoSizeAllColumns(); // size numeric/badge cols from visible rows
+        this.fitTextColumns();             // then override product/SKU from full dataset
       };
       // double-rAF ensures AG Grid has finished its own rendering pass
       if (delay > 0) {
