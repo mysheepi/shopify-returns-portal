@@ -442,12 +442,16 @@ function portal() {
         this.rows = await this.api('GET', `/api/returns?${params}`);
         if (this.gridApi) {
           this.gridApi.setGridOption('rowData', this.rows);
-          this.rows.length ? this.gridApi.hideOverlay() : this.gridApi.showNoRowsOverlay();
-          this.gridApi.autoSizeAllColumns();
         }
         if (this.activeTab === 'chart') this.$nextTick(() => this.renderChart());
+      } catch(e) {
+        if (this.gridApi) this.gridApi.hideOverlay();
+        throw e;
       } finally {
         this.loading = false;
+        if (this.gridApi) {
+          this.rows.length ? this.gridApi.hideOverlay() : this.gridApi.showNoRowsOverlay();
+        }
       }
     },
 
@@ -549,9 +553,10 @@ function portal() {
         suppressMovableColumns: false,
         animateRows: true,
         overlayNoRowsTemplate: '<div style="padding:20px;color:#64748b">📭 No data for the selected filters.</div>',
-        onFirstDataRendered: () => this.gridApi.autoSizeAllColumns(),
+        onRowDataUpdated: () => this.gridApi && this.gridApi.autoSizeAllColumns(),
       };
 
+      if (this.gridApi) { this.gridApi.destroy(); this.gridApi = null; }
       const el = document.getElementById('ag-grid');
       this.gridApi = agGrid.createGrid(el, gridOptions);
     },
