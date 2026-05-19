@@ -471,9 +471,13 @@ function portal() {
 
       const columnDefs = [
         { field: 'sku',         headerName: 'SKU',   pinned: 'left', width: 230, filter: true },
-        { field: 'order_month', headerName: 'Month', width: 110, sort: 'asc' },
+        { field: 'order_month', headerName: 'Month', width: 110, sort: 'asc',
+          cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
+          headerClass: 'ag-right-aligned-header' },
         { field: 'return_window_days', headerName: 'Trial', width: 80,
-          valueFormatter: p => p.value + 'd' },
+          valueFormatter: p => p.value + 'd',
+          cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
+          headerClass: 'ag-right-aligned-header' },
 
         { field: 'total_ordered', headerName: 'Ordered Qty', width: 110,
           cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
