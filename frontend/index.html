@@ -1010,8 +1010,42 @@ function portal() {
       this.savingSettings = false;
     },
 
+    // Sets the product/SKU column widths from ALL rows (not just visible), then
+    // lets AG Grid auto-size the remaining columns from rendered cells.
     resizeColumns(delay = 0) {
-      setTimeout(() => { if (this.gridApi) this.gridApi.autoSizeAllColumns(); }, delay);
+      const doResize = () => {
+        if (!this.gridApi) return;
+        this.fitTextColumns();
+        this.gridApi.autoSizeAllColumns();
+      };
+      // double-rAF ensures AG Grid has finished its own rendering pass
+      if (delay > 0) {
+        setTimeout(doResize, delay);
+      } else {
+        requestAnimationFrame(() => requestAnimationFrame(doResize));
+      }
+    },
+
+    fitTextColumns() {
+      if (!this.gridApi) return;
+      const rows = this.getDisplayRows();
+      if (!rows.length) return;
+      // Canvas gives accurate text width regardless of which rows are virtualised
+      if (!this._canvasCtx) {
+        this._canvasCtx = document.createElement('canvas').getContext('2d');
+        this._canvasCtx.font = '13px Inter, system-ui, sans-serif';
+      }
+      const ctx = this._canvasCtx;
+      const PAD = 38; // left + right cell padding
+      const w = str => ctx.measureText(String(str ?? '')).width + PAD;
+      const updates = [];
+      if (this.viewLevel === 'sku') {
+        updates.push({ key: 'sku',          newWidth: Math.ceil(Math.max(w('SKU'),     ...rows.map(r => w(r.sku          || '')))) });
+        updates.push({ key: 'product_name', newWidth: Math.ceil(Math.max(w('Product'), ...rows.map(r => w(r.product_name || '')))) });
+      } else {
+        updates.push({ key: 'product_name', newWidth: Math.ceil(Math.max(w('Product'), ...rows.map(r => w(r.product_name || '')))) });
+      }
+      this.gridApi.setColumnWidths(updates);
     },
 
     setThreshold(product, val) {
