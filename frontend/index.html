@@ -107,14 +107,17 @@
   /* Tom Select override */
   .ts-wrapper.multi .ts-control { border-radius: 7px; border-color: var(--border); min-height: 36px; }
 
-  /* Hide AG Grid column menu button entirely */
-  .ag-header-cell-menu-button { display: none !important; }
-  /* Column separators — visible enough to separate adjacent numeric values */
-  .ag-theme-alpine .ag-cell        { border-right: 1px solid #e2e8f0 !important; }
-  .ag-theme-alpine .ag-header-cell { border-right: 1px solid #e2e8f0 !important; }
-  /* Header text clipping: flex child needs min-width:0 for overflow:hidden to work */
-  .ag-header-cell-label  { overflow: hidden !important; min-width: 0; }
-  .ag-header-cell-text   { overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; min-width: 0; }
+  /* All AG Grid overrides scoped to .ag-theme-alpine on the grid div */
+  .ag-theme-alpine .ag-header-cell-menu-button { display: none !important; }
+  /* Visible column separators */
+  .ag-theme-alpine .ag-cell        { border-right: 1px solid #cbd5e1 !important; }
+  .ag-theme-alpine .ag-header-cell { border-right: 1px solid #cbd5e1 !important; }
+  /* Header text clipping — must set overflow on the full chain; min-width:0 unlocks flex shrink */
+  .ag-theme-alpine .ag-header-cell,
+  .ag-theme-alpine .ag-header-cell-comp-wrapper,
+  .ag-theme-alpine .ag-cell-label-container,
+  .ag-theme-alpine .ag-header-cell-label { overflow: hidden !important; min-width: 0; }
+  .ag-theme-alpine .ag-header-cell-text  { overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
 
   /* ── Tabs ── */
   .tabs { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; gap: 0; }
@@ -257,7 +260,7 @@
     </div>
 
     <!-- Table — always in DOM when on table tab; AG Grid handles loading/empty overlays -->
-    <div class="grid-wrap" x-show="activeTab === 'table'" id="ag-grid"></div>
+    <div class="grid-wrap ag-theme-alpine" x-show="activeTab === 'table'" id="ag-grid"></div>
 
     <!-- Chart -->
     <div class="chart-wrap" x-show="!loading && activeTab === 'chart'">
@@ -449,6 +452,13 @@ function portal() {
         return (params.value * 100).toFixed(1) + '%';
       };
 
+      // Renders integer qty; shows muted zero so it can't visually merge with adjacent "0.0%"
+      const qtyRenderer = params => {
+        if (params.value === null || params.value === undefined) return '—';
+        if (params.value === 0) return '<span style="color:#94a3b8">0</span>';
+        return String(params.value);
+      };
+
       const columnDefs = [
         { field: 'sku',         headerName: 'SKU',   pinned: 'left', width: 230, filter: true },
         { field: 'order_month', headerName: 'Month', width: 110, sort: 'asc' },
@@ -461,6 +471,7 @@ function portal() {
             cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
             headerClass: 'ag-right-aligned-header' },
           { field: 'returned_30d',    headerName: 'Ret. Qty',    width: 100,
+            cellRenderer: qtyRenderer,
             cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
             headerClass: 'ag-right-aligned-header' },
           { field: 'return_rate_30d', headerName: 'Return Rate', width: 115, cellRenderer: pctRenderer },
@@ -473,6 +484,7 @@ function portal() {
             cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
             headerClass: 'ag-right-aligned-header' },
           { field: 'returned_100d',    headerName: 'Ret. Qty',     width: 100,
+            cellRenderer: qtyRenderer,
             cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
             headerClass: 'ag-right-aligned-header' },
           { field: 'return_rate_100d', headerName: 'Return Rate',  width: 115, cellRenderer: pctRenderer },
