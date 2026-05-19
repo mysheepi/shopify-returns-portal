@@ -79,18 +79,16 @@ def _get_sql():
 
 def test_sql_uses_buffer_math_for_30d_window():
     sql = _get_sql()
-    # Both the SUM CASE and the is_30d_closed comparison must add the buffer.
-    assert sql.count("30 + %(buf)s") >= 3, (
-        "Expected '30 + %(buf)s' in returned_30d, return_rate_30d, "
-        "and is_30d_closed expressions"
+    # CTE-based SQL: buffer applied in returned CTE (CASE WHEN) and is_30d_closed.
+    assert sql.count("30 + %(buf)s") >= 2, (
+        "Expected '30 + %(buf)s' in the returned CTE CASE WHEN and is_30d_closed"
     )
 
 
 def test_sql_uses_buffer_math_for_100d_window():
     sql = _get_sql()
-    assert sql.count("100 + %(buf)s") >= 3, (
-        "Expected '100 + %(buf)s' in returned_100d, return_rate_100d, "
-        "and is_100d_closed expressions"
+    assert sql.count("100 + %(buf)s") >= 2, (
+        "Expected '100 + %(buf)s' in the returned CTE CASE WHEN and is_100d_closed"
     )
 
 
@@ -110,8 +108,9 @@ def test_sql_window_closed_uses_strict_less_than():
     sql = _get_sql()
     normalized = re.sub(r"\s+", " ", sql)
     # Strict less-than (not <=) is what the spec says.
-    assert "(MAX(oli.order_date) + (30 + %(buf)s)) < CURRENT_DATE" in normalized
-    assert "(MAX(oli.order_date) + (100 + %(buf)s)) < CURRENT_DATE" in normalized
+    # CTE approach stores last_order_date in the ordered CTE and references it as o.last_order_date.
+    assert "(o.last_order_date + (30 + %(buf)s)) < CURRENT_DATE" in normalized
+    assert "(o.last_order_date + (100 + %(buf)s)) < CURRENT_DATE" in normalized
 
 
 def test_sql_on_conflict_updates_all_metric_columns():
@@ -135,27 +134,30 @@ def test_sql_uses_inner_join_for_sku_config():
     """SKUs not in sku_config must be excluded — INNER JOIN, not LEFT JOIN."""
     sql = _get_sql()
     normalized = re.sub(r"\s+", " ", sql)
+    # sku_config is INNER JOINed in the ordered CTE so unknown SKUs are excluded.
     assert "JOIN sku_config sc ON sc.sku = oli.sku" in normalized
-    # And LEFT JOIN refund_line_items so SKUs with zero refunds still appear.
-    assert "LEFT JOIN refund_line_items rli" in normalized
+    # The outer SELECT LEFT JOINs the returned CTE so months with zero refunds still appear.
+    assert "LEFT JOIN returned r ON r.sku = o.sku" in normalized
 
 
 def test_sql_nullif_protects_against_zero_division():
-    """return_rate_*  / NULLIF(SUM(oli.quantity), 0) — must never divide by 0."""
+    """return_rate_* / NULLIF(o.total_ordered, 0) — must never divide by 0."""
     sql = _get_sql()
-    assert sql.count("NULLIF(SUM(oli.quantity), 0)") == 2
+    # CTE approach references total_ordered from the ordered CTE as o.total_ordered.
+    assert sql.count("NULLIF(o.total_ordered, 0)") == 2
 
 
 def test_sql_groups_by_sku_month_and_window():
     sql = _get_sql()
     normalized = re.sub(r"\s+", " ", sql)
-    assert (
-        "GROUP BY oli.sku, DATE_TRUNC('month', oli.order_date), sc.return_window_days"
-        in normalized
-    )
+    # The ordered CTE groups by (sku, order_month); return_window_days comes from
+    # sku_config joined in the outer SELECT — same effective grouping.
+    assert "GROUP BY oli.sku, DATE_TRUNC('month', oli.order_date)" in normalized
 
 
 def test_sql_uses_coalesce_for_zero_returns():
     """SKUs with no refunds should get 0 (not NULL) for returned_* columns."""
     sql = _get_sql()
-    assert sql.count("COALESCE(SUM(") >= 4  # 2 windows × (count + rate numerator)
+    # CTE approach: COALESCE(r.returned_30d, 0) and COALESCE(r.returned_100d, 0)
+    # (both appear twice each — once for the count, once as the rate numerator).
+    assert sql.count("COALESCE(r.returned_") >= 4
