@@ -109,16 +109,10 @@
 
   /* All AG Grid overrides scoped to .ag-theme-alpine on the grid div */
   .ag-theme-alpine .ag-header-cell-menu-button { display: none !important; }
-  .ag-theme-alpine .ag-header-group-cell-label { justify-content: center !important; }
+  .ag-theme-alpine .ag-header-group-cell-label { display: flex !important; justify-content: center !important; width: 100%; }
   /* Visible column separators */
   .ag-theme-alpine .ag-cell        { border-right: 1px solid #cbd5e1 !important; }
   .ag-theme-alpine .ag-header-cell { border-right: 1px solid #cbd5e1 !important; }
-  /* Header text clipping — must set overflow on the full chain; min-width:0 unlocks flex shrink */
-  .ag-theme-alpine .ag-header-cell,
-  .ag-theme-alpine .ag-header-cell-comp-wrapper,
-  .ag-theme-alpine .ag-cell-label-container,
-  .ag-theme-alpine .ag-header-cell-label { overflow: hidden !important; min-width: 0; }
-  .ag-theme-alpine .ag-header-cell-text  { overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; }
 
   /* ── Tabs ── */
   .tabs { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; gap: 0; }
@@ -431,6 +425,7 @@ function portal() {
         if (this.gridApi) {
           this.gridApi.setGridOption('rowData', this.rows);
           this.rows.length ? this.gridApi.hideOverlay() : this.gridApi.showNoRowsOverlay();
+          this.gridApi.autoSizeAllColumns();
         }
         if (this.activeTab === 'chart') this.$nextTick(() => this.renderChart());
       } finally {
@@ -509,6 +504,7 @@ function portal() {
         suppressMovableColumns: false,
         animateRows: true,
         overlayNoRowsTemplate: '<div style="padding:20px;color:#64748b">📭 No data for the selected filters.</div>',
+        onFirstDataRendered: () => this.gridApi.autoSizeAllColumns(),
       };
 
       const el = document.getElementById('ag-grid');
