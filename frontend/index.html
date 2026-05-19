@@ -320,7 +320,7 @@ function portal() {
     loading: false,
 
     // Filters
-    filterFrom: '2024-07',
+    filterFrom: '',
     filterTo:   '',
     selectedSkus: [],
     tomSelect: null,
@@ -352,11 +352,12 @@ function portal() {
         await this.login();
       }
 
-      // Default to-month = last complete month (use local date parts to avoid UTC shift)
-      const d = new Date();
-      d.setDate(1);
-      d.setMonth(d.getMonth() - 1);
-      this.filterTo = `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      // Default range: Jan of current year → last complete month
+      const now  = new Date();
+      const yr   = now.getFullYear();
+      const fmt  = (y, m) => `${y}-${String(m).padStart(2, '0')}`;
+      this.filterFrom = fmt(yr, 1);
+      this.filterTo   = fmt(yr, now.getMonth()); // getMonth() is 0-based → prev month 1-based
     },
 
     // ── Auth ─────────────────────────────────────────────────────────────
