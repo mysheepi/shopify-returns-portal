@@ -107,6 +107,9 @@
   /* Tom Select override */
   .ts-wrapper.multi .ts-control { border-radius: 7px; border-color: var(--border); min-height: 36px; }
 
+  /* Hide AG Grid column menu button entirely */
+  .ag-header-cell-menu-button { display: none !important; }
+
   /* ── Tabs ── */
   .tabs { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; gap: 0; }
   .tab-btn {
@@ -412,7 +415,9 @@ function portal() {
     async loadData() {
       this.loading = true;
       const params = new URLSearchParams();
-      if (this.selectedSkus.length) params.set('skus', this.selectedSkus.join(','));
+      // Read directly from Tom Select instance to avoid any reactivity timing issues
+      const skus = this.tomSelect ? this.tomSelect.getValue() : this.selectedSkus;
+      if (skus.length) params.set('skus', skus.join(','));
       if (this.filterFrom) params.set('from', this.filterFrom);
       if (this.filterTo)   params.set('to',   this.filterTo);
 
@@ -490,6 +495,13 @@ function portal() {
         label: s.return_window_days === 100 ? '100d' : '30d',
       }));
 
+      // Explicit self reference avoids any Alpine.js 'this' binding ambiguity
+      const self = this;
+      const onSelectionChange = function() {
+        self.selectedSkus = self.tomSelect ? self.tomSelect.getValue() : [];
+        self.loadData();
+      };
+
       this.tomSelect = new TomSelect('#sku-select', {
         plugins: ['remove_button'],
         options,
@@ -498,12 +510,8 @@ function portal() {
           option: (data) =>
             `<div class="option">${data.text} <span style="color:var(--muted);font-size:11px">${data.label}</span></div>`,
         },
-      });
-
-      // Native change event is more reliable than Tom Select's internal callback with Alpine.js
-      document.getElementById('sku-select').addEventListener('change', () => {
-        this.selectedSkus = this.tomSelect ? this.tomSelect.getValue() : [];
-        this.loadData();
+        onItemAdd:    onSelectionChange,
+        onItemRemove: onSelectionChange,
       });
     },
 
