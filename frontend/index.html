@@ -352,12 +352,13 @@ function portal() {
         await this.login();
       }
 
-      // Default range: Jan of current year → last complete month
+      // Default range: Jan of the same year as the last complete month → last complete month
+      // Using Date() arithmetic so January correctly resolves to Dec of the prior year.
       const now  = new Date();
-      const yr   = now.getFullYear();
-      const fmt  = (y, m) => `${y}-${String(m).padStart(2, '0')}`;
-      this.filterFrom = fmt(yr, 1);
-      this.filterTo   = fmt(yr, now.getMonth()); // getMonth() is 0-based → prev month 1-based
+      const to   = new Date(now.getFullYear(), now.getMonth() - 1, 1);
+      const fmtM = d => `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, '0')}`;
+      this.filterFrom = fmtM(new Date(to.getFullYear(), 0, 1));
+      this.filterTo   = fmtM(to);
     },
 
     // ── Auth ─────────────────────────────────────────────────────────────

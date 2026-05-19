@@ -96,15 +96,17 @@ def test_closed_badge_renderer_handles_null():
 
 # ── Default filter behaviour ────────────────────────────────────────────────
 
-def test_default_from_month_matches_full_sync_start_year():
-    """The frontend defaults from-month to '2024-07' matching FULL_SYNC_START."""
-    assert "filterFrom: '2024-07'" in HTML
+def test_default_from_month_is_jan_of_last_complete_month_year():
+    """From-month defaults dynamically to January of the year that contains the
+    last complete month (handles the January edge case where last complete month
+    is December of the prior year)."""
+    assert "new Date(to.getFullYear(), 0, 1)" in HTML
 
 
 def test_default_to_month_is_last_complete_month():
-    """JS sets filterTo to one calendar month ago — spec says we never show
-    the current month in stats."""
-    assert "setMonth(d.getMonth() - 1)" in HTML
+    """To-month defaults to the last complete calendar month via Date arithmetic
+    (getMonth() - 1 normalises correctly across year boundaries)."""
+    assert "new Date(now.getFullYear(), now.getMonth() - 1, 1)" in HTML
 
 
 # ── Sync polling ─────────────────────────────────────────────────────────────
