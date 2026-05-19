@@ -264,7 +264,7 @@
 
   <!-- Tabs -->
   <div class="tabs">
-    <button class="tab-btn" :class="{active: activeTab==='table'}" @click="activeTab='table'; $nextTick(() => gridApi && gridApi.autoSizeAllColumns())">Table</button>
+    <button class="tab-btn" :class="{active: activeTab==='table'}" @click="activeTab='table'; resizeColumns(50)">Table</button>
     <button class="tab-btn" :class="{active: activeTab==='chart'}" @click="activeTab='chart'; clearChartFilter(viewLevel === 'sku' ? 'product' : 'sku'); renderChart()">Chart</button>
   </div>
 
@@ -641,7 +641,8 @@ function portal() {
         suppressMovableColumns: false,
         animateRows: true,
         overlayNoRowsTemplate: '<div style="padding:20px;color:#64748b">📭 No data for the selected filters.</div>',
-        onRowDataUpdated: () => this.gridApi && this.gridApi.autoSizeAllColumns(),
+        onRowDataUpdated:    () => this.resizeColumns(),
+        onFirstDataRendered: () => this.resizeColumns(),
       };
 
       if (this.gridApi) { this.gridApi.destroy(); this.gridApi = null; }
@@ -790,7 +791,7 @@ function portal() {
       };
       this.gridApi.setGridOption('columnDefs', this.buildColumnDefs(closedRenderer, pctRenderer, qtyRenderer, groupHeader));
       this.gridApi.setGridOption('rowData', this.getDisplayRows());
-      this.gridApi.autoSizeAllColumns();
+      this.resizeColumns();
       if (this.activeTab === 'chart') this.$nextTick(() => this.renderChart());
     },
 
@@ -812,7 +813,7 @@ function portal() {
     applyProductFilter() {
       if (this.gridApi) {
         this.gridApi.setGridOption('rowData', this.getDisplayRows());
-        this.gridApi.autoSizeAllColumns();
+        this.resizeColumns();
       }
       if (this.activeTab === 'chart') this.$nextTick(() => this.renderChart());
     },
@@ -1007,6 +1008,10 @@ function portal() {
         alert('Failed to save: ' + e.message);
       }
       this.savingSettings = false;
+    },
+
+    resizeColumns(delay = 0) {
+      setTimeout(() => { if (this.gridApi) this.gridApi.autoSizeAllColumns(); }, delay);
     },
 
     setThreshold(product, val) {
