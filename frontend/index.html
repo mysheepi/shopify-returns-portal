@@ -661,7 +661,9 @@ function portal() {
 
       const blob = await this.apiFetch(`/api/returns/export?${params}`);
       const url  = URL.createObjectURL(blob);
-      const a    = Object.assign(document.createElement('a'), { href: url, download: 'returns_export.csv' });
+      const from = this.filterFrom || 'start';
+      const to   = this.filterTo   || 'now';
+      const a    = Object.assign(document.createElement('a'), { href: url, download: `mysheepi_returns_${from}_to_${to}.csv` });
       a.click();
       URL.revokeObjectURL(url);
     },
