@@ -1,4 +1,5 @@
 import os
+import json
 import logging
 import secrets
 from contextlib import asynccontextmanager
@@ -182,15 +183,22 @@ def sync_trigger(x_portal_password: Optional[str] = Header(default=None)):
 
 class SettingsPayload(BaseModel):
     return_buffer_days: int
+    return_rate_thresholds: dict = {}
 
 
 @app.get("/api/settings")
 def get_settings(x_portal_password: Optional[str] = Header(default=None)):
     require_auth(x_portal_password)
     with get_db() as conn:
-        row = fetchone(conn,
+        buf_row = fetchone(conn,
             "SELECT value::INT AS return_buffer_days FROM settings WHERE key = 'return_buffer_days'")
-    return {"return_buffer_days": row["return_buffer_days"] if row else 10}
+        thr_row = fetchone(conn,
+            "SELECT value FROM settings WHERE key = 'return_rate_thresholds'")
+    thresholds = json.loads(thr_row["value"]) if thr_row else {"_default": 15}
+    return {
+        "return_buffer_days":    buf_row["return_buffer_days"] if buf_row else 10,
+        "return_rate_thresholds": thresholds,
+    }
 
 
 @app.post("/api/settings")
@@ -206,6 +214,10 @@ def save_settings(
         execute(conn,
             "UPDATE settings SET value = %s WHERE key = 'return_buffer_days'",
             (str(payload.return_buffer_days),))
+        execute(conn, """
+            INSERT INTO settings (key, value) VALUES ('return_rate_thresholds', %s)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+        """, (json.dumps(payload.return_rate_thresholds),))
 
     started = trigger_reaggregate()
     return {"saved": True, "reaggregating": started}

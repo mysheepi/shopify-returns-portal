@@ -148,7 +148,8 @@
   }
   .settings-card {
     background: var(--surface); border-radius: 12px; padding: 32px;
-    width: 380px; box-shadow: 0 8px 40px rgba(0,0,0,.15);
+    width: 540px; max-height: 90vh; overflow-y: auto;
+    box-shadow: 0 8px 40px rgba(0,0,0,.15);
   }
   .settings-card h2 { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
   .settings-card p  { color: var(--muted); font-size: 13px; margin-bottom: 24px; }
@@ -311,6 +312,32 @@
       </span>
     </div>
 
+    <div class="settings-row">
+      <label>DEFAULT REFUND RATE THRESHOLD (%)</label>
+      <input type="number" x-model.number="thresholdPct['_default']" min="0" max="100" step="0.1">
+      <span class="settings-hint">Refund rate cells above this value are highlighted red. Applied to all products unless overridden below.</span>
+    </div>
+
+    <div class="settings-row" style="margin-bottom:8px">
+      <label>PER-PRODUCT THRESHOLD OVERRIDES (%)</label>
+      <div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:7px">
+        <template x-for="product in productList" :key="product">
+          <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;border-bottom:1px solid var(--border)">
+            <span style="flex:1;font-size:13px" x-text="product"></span>
+            <input type="number"
+                   style="width:74px;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:13px;outline:none"
+                   :placeholder="thresholdPct['_default']"
+                   :value="thresholdPct[product] !== undefined ? thresholdPct[product] : ''"
+                   @input="e => setThreshold(product, e.target.value)"
+                   @focus="e => e.target.style.borderColor='var(--accent)'"
+                   @blur="e => e.target.style.borderColor='var(--border)'"
+                   min="0" max="100" step="0.1">
+          </div>
+        </template>
+      </div>
+      <span class="settings-hint" style="margin-top:4px">Leave blank to use the default threshold above.</span>
+    </div>
+
     <div class="settings-actions">
       <button class="btn btn-outline" @click="showSettings=false">Cancel</button>
       <button class="btn btn-primary" @click="saveSettings()" :disabled="savingSettings">
@@ -436,6 +463,8 @@ function portal() {
     // Settings
     showSettings: false,
     bufferInput: 10,
+    thresholdPct: { '_default': 15 },
+    productList: [...new Set(Object.values(SKU_PRODUCT))].sort(),
     savingSettings: false,
 
     // ── Init ──────────────────────────────────────────────────────────────
@@ -511,7 +540,8 @@ function portal() {
 
     async loadSettings() {
       const s = await this.api('GET', '/api/settings');
-      this.bufferInput = s.return_buffer_days;
+      this.bufferInput  = s.return_buffer_days;
+      this.thresholdPct = s.return_rate_thresholds || { '_default': 15 };
     },
 
     setRange(months) {
@@ -622,7 +652,17 @@ function portal() {
     buildColumnDefs(closedRenderer, pctRenderer, qtyRenderer, groupHeader) {
       // Shared metric column groups (same in both views)
       const R = (f, h) => ({ field: f, headerName: h, cellRenderer: pctRenderer,
-        cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
+        cellStyle: params => {
+          const base = { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' };
+          if (params.value == null) return base;
+          const product = params.data?.product_name
+            ?? (params.data?.sku ? SKU_PRODUCT[params.data.sku] : null);
+          const thr = this.thresholdPct;
+          const limit = (product != null && thr[product] != null ? thr[product] : (thr['_default'] ?? 15)) / 100;
+          return params.value > limit
+            ? { ...base, background: '#fee2e2', color: '#dc2626', fontWeight: '600' }
+            : base;
+        },
         headerClass: 'ag-right-aligned-header' });
       const Q = (f, h) => ({ field: f, headerName: h, cellRenderer: qtyRenderer,
         cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
@@ -955,14 +995,29 @@ function portal() {
     async saveSettings() {
       this.savingSettings = true;
       try {
-        await this.api('POST', '/api/settings', { return_buffer_days: this.bufferInput });
+        await this.api('POST', '/api/settings', {
+          return_buffer_days: this.bufferInput,
+          return_rate_thresholds: this.thresholdPct,
+        });
         this.showSettings = false;
-        // Wait for reaggregation then refresh table
+        // Redraw immediately so new threshold colours show before reaggregation finishes
+        if (this.gridApi) this.gridApi.redrawRows();
         setTimeout(() => this.loadData(), 1500);
       } catch(e) {
         alert('Failed to save: ' + e.message);
       }
       this.savingSettings = false;
+    },
+
+    setThreshold(product, val) {
+      const num = parseFloat(val);
+      const t = { ...this.thresholdPct };
+      if (!val || isNaN(num)) {
+        delete t[product];
+      } else {
+        t[product] = num;
+      }
+      this.thresholdPct = t;
     },
   };
 }
