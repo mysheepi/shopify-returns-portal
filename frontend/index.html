@@ -441,25 +441,24 @@ function portal() {
       };
 
       const columnDefs = [
-        { field: 'sku',          headerName: 'SKU',     pinned: 'left', width: 230, filter: true },
-        { field: 'order_month',  headerName: 'Month',   width: 110, sort: 'asc', suppressHeaderMenuButton: true },
-        { field: 'return_window_days', headerName: 'Trial', width: 85,
-          valueFormatter: p => p.value + 'd', suppressHeaderMenuButton: true },
-        { field: 'total_ordered', headerName: 'Ordered', width: 100,
-          type: 'numericColumn', suppressHeaderMenuButton: true },
+        { field: 'sku',         headerName: 'SKU',   pinned: 'left', width: 230, filter: true },
+        { field: 'order_month', headerName: 'Month', width: 110, sort: 'asc' },
+        { field: 'return_window_days', headerName: 'Trial', width: 80,
+          valueFormatter: p => p.value + 'd' },
 
-        // 30-day window group
+        // 30-day window group — Ordered is first child so it aligns under the group header
         { headerName: '30-day window', children: [
-          { field: 'returned_30d',    headerName: 'Ret. Qty',     width: 95,  type: 'numericColumn', suppressHeaderMenuButton: true },
-          { field: 'return_rate_30d', headerName: 'Return Rate',  width: 115, cellRenderer: pctRenderer, suppressHeaderMenuButton: true },
-          { field: 'is_30d_closed',   headerName: 'Window Closed', width: 120, cellRenderer: closedRenderer, suppressHeaderMenuButton: true },
+          { field: 'total_ordered',   headerName: 'Ordered',     width: 100, type: 'numericColumn' },
+          { field: 'returned_30d',    headerName: 'Ret. Qty',    width: 90,  type: 'numericColumn' },
+          { field: 'return_rate_30d', headerName: 'Return Rate', width: 115, cellRenderer: pctRenderer },
+          { field: 'is_30d_closed',   headerName: 'Trial Ended', width: 110, cellRenderer: closedRenderer },
         ]},
 
-        // 100-day window group
+        // 100-day window group — Ordered omitted (same denominator, already shown in 30d group)
         { headerName: '100-day window', children: [
-          { field: 'returned_100d',    headerName: 'Ret. Qty',     width: 95,  type: 'numericColumn', suppressHeaderMenuButton: true },
-          { field: 'return_rate_100d', headerName: 'Return Rate',  width: 115, cellRenderer: pctRenderer, suppressHeaderMenuButton: true },
-          { field: 'is_100d_closed',   headerName: 'Window Closed', width: 120, cellRenderer: closedRenderer, suppressHeaderMenuButton: true },
+          { field: 'returned_100d',    headerName: 'Ret. Qty',    width: 90,  type: 'numericColumn' },
+          { field: 'return_rate_100d', headerName: 'Return Rate', width: 115, cellRenderer: pctRenderer },
+          { field: 'is_100d_closed',   headerName: 'Trial Ended', width: 110, cellRenderer: closedRenderer },
         ]},
       ];
 
@@ -468,6 +467,7 @@ function portal() {
         rowData: this.rows,
         defaultColDef: {
           sortable: true, resizable: true,
+          suppressHeaderMenuButton: true,
           cellStyle: { display: 'flex', alignItems: 'center' },
         },
         rowHeight: 36,
@@ -498,10 +498,12 @@ function portal() {
           option: (data) =>
             `<div class="option">${data.text} <span style="color:var(--muted);font-size:11px">${data.label}</span></div>`,
         },
-        onChange: () => {
-          this.selectedSkus = this.tomSelect ? this.tomSelect.getValue() : [];
-          this.loadData();
-        },
+      });
+
+      // Native change event is more reliable than Tom Select's internal callback with Alpine.js
+      document.getElementById('sku-select').addEventListener('change', () => {
+        this.selectedSkus = this.tomSelect ? this.tomSelect.getValue() : [];
+        this.loadData();
       });
     },
 
