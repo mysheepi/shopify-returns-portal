@@ -638,7 +638,7 @@ function portal() {
         cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
         headerClass: 'ag-right-aligned-header' };
       const trialCol = { field: 'return_window_days', headerName: 'Trial',
-        valueFormatter: p => p.value != null ? p.value + 'd' : '—',
+        valueFormatter: p => p.value != null ? p.value + 'd' : (this.viewLevel === 'product' ? 'Mixed' : '—'),
         cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
         headerClass: 'ag-right-aligned-header' };
 
@@ -651,7 +651,7 @@ function portal() {
       } else {
         return [
           { field: 'product_name', headerName: 'Product', pinned: 'left', width: 220, filter: true },
-          monthCol, orderedCol, win30, win100,
+          monthCol, trialCol, orderedCol, win30, win100,
         ];
       }
     },
@@ -674,7 +674,8 @@ function portal() {
         if (!map[key]) {
           map[key] = { product_name: prod, order_month: r.order_month,
             total_ordered: 0, returned_30d: 0, returned_100d: 0,
-            is_30d_closed: true, is_100d_closed: true };
+            is_30d_closed: true, is_100d_closed: true,
+            return_window_days: r.return_window_days };
         }
         const g = map[key];
         g.total_ordered  += r.total_ordered  || 0;
@@ -682,6 +683,7 @@ function portal() {
         g.returned_100d  += r.returned_100d  || 0;
         g.is_30d_closed   = g.is_30d_closed  && !!r.is_30d_closed;
         g.is_100d_closed  = g.is_100d_closed && !!r.is_100d_closed;
+        if (g.return_window_days !== r.return_window_days) g.return_window_days = null;
       }
       return Object.values(map).map(g => ({
         ...g,
