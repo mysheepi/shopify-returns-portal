@@ -238,6 +238,13 @@
         <button class="btn btn-outline" @click="setRange(6)">Last 6 Months</button>
       </div>
     </div>
+    <div class="filter-group">
+      <label>View</label>
+      <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:7px;overflow:hidden">
+        <button class="btn" :style="viewLevel==='sku' ? 'background:var(--accent);color:#fff;border-radius:0' : 'background:#fff;color:var(--text);border-radius:0'" @click="switchView('sku')">By SKU</button>
+        <button class="btn" :style="viewLevel==='product' ? 'background:var(--accent);color:#fff;border-radius:0' : 'background:#fff;color:var(--text);border-radius:0;border-left:1px solid var(--border)'" @click="switchView('product')">By Product</button>
+      </div>
+    </div>
     <div class="filter-group" style="margin-left:auto">
       <label>&nbsp;</label>
       <button class="btn btn-outline" @click="exportCsv()">
@@ -306,6 +313,77 @@ const PALETTE = [
   '#06b6d4','#f97316','#84cc16',
 ];
 
+      const SKU_PRODUCT = {
+        'MS.BAGS.TRVL.BLUE.40x35':'Travel Bag',
+        'MS.BSHT.FITT.WHIT.100x200':'Fitted Sheet',
+        'MS.BSHT.FITT.WHIT.140x200':'Fitted Sheet',
+        'MS.BSHT.FITT.WHIT.160x200':'Fitted Sheet',
+        'MS.CASE.HOME.BEIG.60x40':'Premium Pillowcase',
+        'MS.CASE.HOME.BEIG.80x40':'Premium Pillowcase',
+        'MS.CASE.HOME.BEIGE.60.40.REN':'Basic Pillowcase',
+        'MS.CASE.HOME.BEIGE.80.40.REN':'Basic Pillowcase',
+        'MS.CASE.HOME.BLUE.60x40':'Premium Pillowcase',
+        'MS.CASE.HOME.BLUE.80x40':'Premium Pillowcase',
+        'MS.CASE.HOME.DARKBLUE.60.40.REN':'Basic Pillowcase',
+        'MS.CASE.HOME.DARKBLUE.80.40.REN':'Basic Pillowcase',
+        'MS.CASE.HOME.DARKGREY.60.40.REN':'Basic Pillowcase',
+        'MS.CASE.HOME.DARKGREY.80.40.REN':'Basic Pillowcase',
+        'MS.CASE.HOME.GREY.60x40':'Premium Pillowcase',
+        'MS.CASE.HOME.GREY.80x40':'Premium Pillowcase',
+        'MS.CASE.HOME.REDD.60x40':'Premium Pillowcase',
+        'MS.CASE.HOME.REDD.80x40':'Premium Pillowcase',
+        'MS.CASE.HOME.WEISS.60.40':'Basic Pillowcase',
+        'MS.CASE.HOME.WEISS.80.40':'Basic Pillowcase',
+        'MS.CASE.HOME.WHIT.60x40':'Premium Pillowcase',
+        'MS.CASE.HOME.WHIT.80x40':'Premium Pillowcase',
+        'MS.CASE.KIDS.CARS.30.40':'Kids Pillowcase',
+        'MS.CASE.KIDS.STARS.30.40':'Kids Pillowcase',
+        'MS.CASE.KIDS.STARS.MOON.30.40':'Kids Pillowcase',
+        'MS.CASE.SILK.GREY.60x40':'Silk Pillowcase',
+        'MS.CASE.SILK.GREY.80x40':'Silk Pillowcase',
+        'MS.CASE.SILK.IVRY.60x40':'Silk Pillowcase',
+        'MS.CASE.SILK.IVRY.80x40':'Silk Pillowcase',
+        'MS.CASE.SILK.LILA.60x40':'Silk Pillowcase',
+        'MS.CASE.SILK.LILA.80x40':'Silk Pillowcase',
+        'MS.CASE.SILK.NAVY.60x40':'Silk Pillowcase',
+        'MS.CASE.SILK.NAVY.80x40':'Silk Pillowcase',
+        'MS.CASE.SILK.PINK.60x40':'Silk Pillowcase',
+        'MS.CASE.SILK.PINK.80x40':'Silk Pillowcase',
+        'MS.CASE.SILK.PIST.60x40':'Silk Pillowcase',
+        'MS.CASE.SILK.PIST.80x40':'Silk Pillowcase',
+        'MS.CASE.TRAVEL.BLUE.MOTTLED.35.40':'Travel Basic Pillowcase',
+        'MS.CASE.TRAVEL.GRAY.MOTTLED.35.40':'Travel Basic Pillowcase',
+        'MS.CASE.TRAVEL.GREEN.MOTTLED.35.40':'Travel Basic Pillowcase',
+        'MS.CASE.TRVL.BEIG.40x35':'Travel Premium Pillowcase',
+        'MS.CASE.TRVL.BLUE.40x35':'Travel Premium Pillowcase',
+        'MS.CASE.TRVL.GREY.40x35':'Travel Premium Pillowcase',
+        'MS.CASE.TRVL.REDD.40x35':'Travel Premium Pillowcase',
+        'MS.COAT.VLVT.BLCK.102':'Kuschelmantel',
+        'MS.COAT.VLVT.NAVY.102':'Kuschelmantel',
+        'MS.COVR.DUVT.WHIT.135x200':'Duvet Cover',
+        'MS.COVR.DUVT.WHIT.200x200':'Duvet Cover',
+        'MS.CSHN.BACK.BLCK':'Seat Cushion',
+        'MS.CSHN.SEAT.BLCK':'Seat Cushion',
+        'MS.DUVT.WHIT.135x200':'Duvet',
+        'MS.DUVT.WHIT.155x220':'Duvet',
+        'MS.DUVT.WHIT.200x200':'Duvet',
+        'MS.DUVT.WHIT.220x240':'Duvet',
+        'MS.GELCOMPRESS':'Gel',
+        'MS.HOME.60x40.A1':'Home Pillow',
+        'MS.HOME.80x40.A1':'Home Pillow',
+        'MS.HOME.COOL.80x40':'Pro Pillow',
+        'MS.KIDS.WHITE':'Kids Pillow',
+        'MS.MASK.GREY':'Sleep Mask',
+        'MS.MASK.IVRY':'Sleep Mask',
+        'MS.MASK.NAVY':'Sleep Mask',
+        'MS.PILW.TRVL.WHIT.40x35':'Travel Pillow',
+        'MS.SPRAY.LAVENDEL':'Spray',
+        'MS.SPRAY.LEMEUKA':'Spray',
+        'MS.SPRAY.LEMROSE':'Spray',
+        'MS.SPRAY.STONEPINE':'Spray',
+        'MS.TRAVEL.WHITE.H1':'Travel Pillow',
+      };
+
 function portal() {
   return {
     // Auth
@@ -327,6 +405,7 @@ function portal() {
 
     // UI
     activeTab: 'table',
+    viewLevel: 'sku',
     gridApi: null,
     chartInstance: null,
 
@@ -443,7 +522,7 @@ function portal() {
       try {
         this.rows = await this.api('GET', `/api/returns?${params}`);
         if (this.gridApi) {
-          this.gridApi.setGridOption('rowData', this.rows);
+          this.gridApi.setGridOption('rowData', this.getDisplayRows());
         }
         if (this.activeTab === 'chart') this.$nextTick(() => this.renderChart());
       } catch(e) {
@@ -493,50 +572,11 @@ function portal() {
         return String(params.value);
       };
 
-      const columnDefs = [
-        { field: 'sku',         headerName: 'SKU',   pinned: 'left', width: 230, filter: true },
-        { field: 'order_month', headerName: 'Month', width: 110, sort: 'asc',
-          cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
-          headerClass: 'ag-right-aligned-header' },
-        { field: 'return_window_days', headerName: 'Trial', width: 80,
-          valueFormatter: p => p.value + 'd',
-          cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
-          headerClass: 'ag-right-aligned-header' },
-
-        { field: 'total_ordered', headerName: 'Ordered Qty', width: 110,
-          cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
-          headerClass: 'ag-right-aligned-header' },
-
-        { headerName: '30D Window', headerGroupComponent: groupHeader(() => `Order Date + 30D + ${this.bufferInput}D buffer`), children: [
-          { field: 'returned_30d',    headerName: 'Returned Qty', width: 115,
-            cellRenderer: qtyRenderer,
-            cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
-            headerClass: 'ag-right-aligned-header' },
-          { field: 'return_rate_30d', headerName: 'Refund Rate',   width: 115, cellRenderer: pctRenderer,
-            cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
-            headerClass: 'ag-right-aligned-header' },
-          { field: 'is_30d_closed',   headerName: 'Window Closed', width: 120, cellRenderer: closedRenderer,
-            cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
-            headerClass: 'ag-right-aligned-header' },
-        ]},
-
-        { headerName: '100D Window', headerGroupComponent: groupHeader(() => `Order Date + 100D + ${this.bufferInput}D buffer`), children: [
-          { field: 'returned_100d',    headerName: 'Returned Qty', width: 115,
-            cellRenderer: qtyRenderer,
-            cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
-            headerClass: 'ag-right-aligned-header' },
-          { field: 'return_rate_100d', headerName: 'Refund Rate',   width: 115, cellRenderer: pctRenderer,
-            cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
-            headerClass: 'ag-right-aligned-header' },
-          { field: 'is_100d_closed',   headerName: 'Window Closed', width: 120, cellRenderer: closedRenderer,
-            cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
-            headerClass: 'ag-right-aligned-header' },
-        ]},
-      ];
+      const columnDefs = this.buildColumnDefs(closedRenderer, pctRenderer, qtyRenderer, groupHeader);
 
       const gridOptions = {
         columnDefs,
-        rowData: this.rows,
+        rowData: this.getDisplayRows(),
         defaultColDef: {
           sortable: true, resizable: true,
           suppressHeaderMenuButton: true,
@@ -561,6 +601,113 @@ function portal() {
       if (this.gridApi) { this.gridApi.destroy(); this.gridApi = null; }
       const el = document.getElementById('ag-grid');
       this.gridApi = agGrid.createGrid(el, gridOptions);
+    },
+
+    buildColumnDefs(closedRenderer, pctRenderer, qtyRenderer, groupHeader) {
+      // Shared metric column groups (same in both views)
+      const R = (f, h) => ({ field: f, headerName: h, cellRenderer: pctRenderer,
+        cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
+        headerClass: 'ag-right-aligned-header' });
+      const Q = (f, h) => ({ field: f, headerName: h, cellRenderer: qtyRenderer,
+        cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
+        headerClass: 'ag-right-aligned-header' });
+      const C = (f, h) => ({ field: f, headerName: h, cellRenderer: closedRenderer,
+        cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
+        headerClass: 'ag-right-aligned-header' });
+      const N = (f, h) => ({ field: f, headerName: h,
+        cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
+        headerClass: 'ag-right-aligned-header' });
+
+      const win30 = { headerName: '30D Window',
+        headerGroupComponent: groupHeader(() => `Order Date + 30D + ${this.bufferInput}D buffer`),
+        children: [ Q('returned_30d','Returned Qty'), R('return_rate_30d','Refund Rate'), C('is_30d_closed','Window Closed') ] };
+      const win100 = { headerName: '100D Window',
+        headerGroupComponent: groupHeader(() => `Order Date + 100D + ${this.bufferInput}D buffer`),
+        children: [ Q('returned_100d','Returned Qty'), R('return_rate_100d','Refund Rate'), C('is_100d_closed','Window Closed') ] };
+      const orderedCol = N('total_ordered', 'Ordered Qty');
+      const monthCol = { field: 'order_month', headerName: 'Month', sort: 'asc',
+        cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
+        headerClass: 'ag-right-aligned-header' };
+      const trialCol = { field: 'return_window_days', headerName: 'Trial',
+        valueFormatter: p => p.value != null ? p.value + 'd' : '—',
+        cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
+        headerClass: 'ag-right-aligned-header' };
+
+      if (this.viewLevel === 'sku') {
+        return [
+          { field: 'sku',          headerName: 'SKU',     pinned: 'left', width: 230, filter: true },
+          { field: 'product_name', headerName: 'Product', width: 180 },
+          monthCol, trialCol, orderedCol, win30, win100,
+        ];
+      } else {
+        return [
+          { field: 'product_name', headerName: 'Product', pinned: 'left', width: 220, filter: true },
+          monthCol, orderedCol, win30, win100,
+        ];
+      }
+    },
+
+    getDisplayRows() {
+      if (this.viewLevel === 'sku') {
+        return this.rows.map(r => ({ ...r, product_name: SKU_PRODUCT[r.sku] || r.sku }));
+      }
+      // Product-level: aggregate by (product_name, order_month)
+      const map = {};
+      for (const r of this.rows) {
+        const prod = SKU_PRODUCT[r.sku] || r.sku;
+        const key  = `${prod}||${r.order_month}`;
+        if (!map[key]) {
+          map[key] = { product_name: prod, order_month: r.order_month,
+            total_ordered: 0, returned_30d: 0, returned_100d: 0,
+            is_30d_closed: true, is_100d_closed: true };
+        }
+        const g = map[key];
+        g.total_ordered  += r.total_ordered  || 0;
+        g.returned_30d   += r.returned_30d   || 0;
+        g.returned_100d  += r.returned_100d  || 0;
+        g.is_30d_closed   = g.is_30d_closed  && !!r.is_30d_closed;
+        g.is_100d_closed  = g.is_100d_closed && !!r.is_100d_closed;
+      }
+      return Object.values(map).map(g => ({
+        ...g,
+        return_rate_30d:  g.total_ordered ? g.returned_30d  / g.total_ordered : null,
+        return_rate_100d: g.total_ordered ? g.returned_100d / g.total_ordered : null,
+      }));
+    },
+
+    switchView(level) {
+      if (this.viewLevel === level) return;
+      this.viewLevel = level;
+      if (!this.gridApi) return;
+      // Rebuild renderers so buildColumnDefs can reference them
+      const closedRenderer = params => {
+        if (params.value === null || params.value === undefined) return '';
+        return params.value
+          ? '<span class="closed-badge badge-closed">✓</span>'
+          : '<span class="closed-badge badge-open">⏳</span>';
+      };
+      const pctRenderer = params => {
+        if (params.value === null || params.value === undefined) return '—';
+        return (params.value * 100).toFixed(1) + '%';
+      };
+      const qtyRenderer = params => {
+        if (params.value === null || params.value === undefined) return '—';
+        if (params.value === 0) return '<span style="color:#94a3b8">0</span>';
+        return String(params.value);
+      };
+      const groupHeader = (getTooltip) => class {
+        init(p) {
+          this.eGui = document.createElement('div');
+          this.eGui.style.cssText = 'display:flex;align-items:center;justify-content:center;width:100%;height:100%;cursor:default';
+          this.eGui.textContent = p.displayName;
+          this.eGui.addEventListener('mouseenter', () => { this.eGui.title = getTooltip(); });
+        }
+        getGui() { return this.eGui; }
+        destroy() {}
+      };
+      this.gridApi.setGridOption('columnDefs', this.buildColumnDefs(closedRenderer, pctRenderer, qtyRenderer, groupHeader));
+      this.gridApi.setGridOption('rowData', this.getDisplayRows());
+      this.gridApi.autoSizeAllColumns();
     },
 
     // ── Tom Select ────────────────────────────────────────────────────────
