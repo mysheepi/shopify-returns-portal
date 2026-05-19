@@ -274,7 +274,7 @@
 
     <!-- Chart -->
     <div class="chart-wrap" x-show="!loading && activeTab === 'chart'">
-      <p class="chart-hint">Showing up to 8 SKUs. Select specific SKUs above to compare.</p>
+      <p class="chart-hint" x-text="viewLevel === 'product' ? 'Showing up to 8 products. Filter by SKU above to narrow.' : 'Showing up to 8 SKUs. Select specific SKUs above to compare.'"></p>
       <canvas id="return-chart"></canvas>
     </div>
 
@@ -318,24 +318,24 @@ const PALETTE = [
         'MS.BSHT.FITT.WHIT.100x200':'Fitted Sheet',
         'MS.BSHT.FITT.WHIT.140x200':'Fitted Sheet',
         'MS.BSHT.FITT.WHIT.160x200':'Fitted Sheet',
-        'MS.CASE.HOME.BEIG.60x40':'Premium Pillowcase',
-        'MS.CASE.HOME.BEIG.80x40':'Premium Pillowcase',
-        'MS.CASE.HOME.BEIGE.60.40.REN':'Basic Pillowcase',
-        'MS.CASE.HOME.BEIGE.80.40.REN':'Basic Pillowcase',
-        'MS.CASE.HOME.BLUE.60x40':'Premium Pillowcase',
-        'MS.CASE.HOME.BLUE.80x40':'Premium Pillowcase',
-        'MS.CASE.HOME.DARKBLUE.60.40.REN':'Basic Pillowcase',
-        'MS.CASE.HOME.DARKBLUE.80.40.REN':'Basic Pillowcase',
-        'MS.CASE.HOME.DARKGREY.60.40.REN':'Basic Pillowcase',
-        'MS.CASE.HOME.DARKGREY.80.40.REN':'Basic Pillowcase',
-        'MS.CASE.HOME.GREY.60x40':'Premium Pillowcase',
-        'MS.CASE.HOME.GREY.80x40':'Premium Pillowcase',
-        'MS.CASE.HOME.REDD.60x40':'Premium Pillowcase',
-        'MS.CASE.HOME.REDD.80x40':'Premium Pillowcase',
-        'MS.CASE.HOME.WEISS.60.40':'Basic Pillowcase',
-        'MS.CASE.HOME.WEISS.80.40':'Basic Pillowcase',
-        'MS.CASE.HOME.WHIT.60x40':'Premium Pillowcase',
-        'MS.CASE.HOME.WHIT.80x40':'Premium Pillowcase',
+        'MS.CASE.HOME.BEIG.60x40':'Home Premium Pillowcase',
+        'MS.CASE.HOME.BEIG.80x40':'Home Premium Pillowcase',
+        'MS.CASE.HOME.BEIGE.60.40.REN':'Home Basic Pillowcase',
+        'MS.CASE.HOME.BEIGE.80.40.REN':'Home Basic Pillowcase',
+        'MS.CASE.HOME.BLUE.60x40':'Home Premium Pillowcase',
+        'MS.CASE.HOME.BLUE.80x40':'Home Premium Pillowcase',
+        'MS.CASE.HOME.DARKBLUE.60.40.REN':'Home Basic Pillowcase',
+        'MS.CASE.HOME.DARKBLUE.80.40.REN':'Home Basic Pillowcase',
+        'MS.CASE.HOME.DARKGREY.60.40.REN':'Home Basic Pillowcase',
+        'MS.CASE.HOME.DARKGREY.80.40.REN':'Home Basic Pillowcase',
+        'MS.CASE.HOME.GREY.60x40':'Home Premium Pillowcase',
+        'MS.CASE.HOME.GREY.80x40':'Home Premium Pillowcase',
+        'MS.CASE.HOME.REDD.60x40':'Home Premium Pillowcase',
+        'MS.CASE.HOME.REDD.80x40':'Home Premium Pillowcase',
+        'MS.CASE.HOME.WEISS.60.40':'Home Basic Pillowcase',
+        'MS.CASE.HOME.WEISS.80.40':'Home Basic Pillowcase',
+        'MS.CASE.HOME.WHIT.60x40':'Home Premium Pillowcase',
+        'MS.CASE.HOME.WHIT.80x40':'Home Premium Pillowcase',
         'MS.CASE.KIDS.CARS.30.40':'Kids Pillowcase',
         'MS.CASE.KIDS.STARS.30.40':'Kids Pillowcase',
         'MS.CASE.KIDS.STARS.MOON.30.40':'Kids Pillowcase',
@@ -371,7 +371,7 @@ const PALETTE = [
         'MS.GELCOMPRESS':'Gel',
         'MS.HOME.60x40.A1':'Home Pillow',
         'MS.HOME.80x40.A1':'Home Pillow',
-        'MS.HOME.COOL.80x40':'Pro Pillow',
+        'MS.HOME.COOL.80x40':'Home Pro Pillow',
         'MS.KIDS.WHITE':'Kids Pillow',
         'MS.MASK.GREY':'Sleep Mask',
         'MS.MASK.IVRY':'Sleep Mask',
@@ -708,6 +708,7 @@ function portal() {
       this.gridApi.setGridOption('columnDefs', this.buildColumnDefs(closedRenderer, pctRenderer, qtyRenderer, groupHeader));
       this.gridApi.setGridOption('rowData', this.getDisplayRows());
       this.gridApi.autoSizeAllColumns();
+      if (this.activeTab === 'chart') this.$nextTick(() => this.renderChart());
     },
 
     // ── Tom Select ────────────────────────────────────────────────────────
@@ -744,20 +745,25 @@ function portal() {
     renderChart() {
       if (this.chartInstance) { this.chartInstance.destroy(); this.chartInstance = null; }
 
-      const skusToShow = this.selectedSkus.length
-        ? this.selectedSkus.slice(0, 8)
-        : [...new Set(this.rows.map(r => r.sku))].slice(0, 8);
+      const displayRows = this.getDisplayRows();
+      const groupKey = this.viewLevel === 'product' ? 'product_name' : 'sku';
 
-      const months = [...new Set(this.rows.map(r => r.order_month))].sort();
+      // Determine which series to show (up to 8)
+      const allKeys = [...new Set(displayRows.map(r => r[groupKey]))];
+      const keysToShow = (this.viewLevel === 'sku' && this.selectedSkus.length)
+        ? this.selectedSkus.slice(0, 8)
+        : allKeys.slice(0, 8);
+
+      const months = [...new Set(displayRows.map(r => r.order_month))].sort();
 
       const datasets = [];
-      skusToShow.forEach((sku, idx) => {
+      keysToShow.forEach((key, idx) => {
         const color = PALETTE[idx % PALETTE.length];
-        const skuRows = this.rows.filter(r => r.sku === sku);
-        const byMonth = Object.fromEntries(skuRows.map(r => [r.order_month, r]));
+        const seriesRows = displayRows.filter(r => r[groupKey] === key);
+        const byMonth = Object.fromEntries(seriesRows.map(r => [r.order_month, r]));
 
         datasets.push({
-          label: `${sku} (30d)`,
+          label: `${key} (30d)`,
           data: months.map(m => byMonth[m] ? (byMonth[m].return_rate_30d * 100).toFixed(2) : null),
           borderColor: color,
           backgroundColor: color + '22',
@@ -767,7 +773,7 @@ function portal() {
           spanGaps: false,
         });
         datasets.push({
-          label: `${sku} (100d)`,
+          label: `${key} (100d)`,
           data: months.map(m => byMonth[m] ? (byMonth[m].return_rate_100d * 100).toFixed(2) : null),
           borderColor: color,
           backgroundColor: 'transparent',
