@@ -227,11 +227,11 @@
         <button class="btn" :style="viewLevel==='sku' ? 'background:var(--accent);color:#fff;border-radius:0' : 'background:#fff;color:var(--text);border-radius:0;border-left:1px solid var(--border)'" @click="switchView('sku')">By SKU</button>
       </div>
     </div>
-    <div class="filter-group product-select-wrap">
+    <div class="filter-group product-select-wrap" :style="activeTab === 'chart' && viewLevel === 'sku' ? 'opacity:.35;pointer-events:none' : ''"  :title="activeTab === 'chart' && viewLevel === 'sku' ? 'Switch to By Product to filter by product on the chart' : ''">
       <label>Products</label>
       <select id="product-select" multiple placeholder="All Products…"></select>
     </div>
-    <div class="filter-group sku-select-wrap">
+    <div class="filter-group sku-select-wrap" :style="activeTab === 'chart' && viewLevel === 'product' ? 'opacity:.35;pointer-events:none' : ''" :title="activeTab === 'chart' && viewLevel === 'product' ? 'Switch to By SKU to filter by SKU on the chart' : ''">
       <label>SKUs</label>
       <select id="sku-select" multiple placeholder="All SKUs…"></select>
     </div>
