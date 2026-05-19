@@ -94,17 +94,17 @@
   /* ── Toolbar ── */
   .toolbar {
     background: var(--surface); border-bottom: 1px solid var(--border);
-    padding: 12px 24px; display: flex; flex-direction: column; gap: 10px;
+    padding: 12px 24px; display: flex; align-items: flex-end; gap: 12px; flex-wrap: wrap;
   }
-  .toolbar-row { display: flex; align-items: flex-end; gap: 16px; flex-wrap: wrap; }
+  .toolbar-row { display: contents; }
   .filter-group { display: flex; flex-direction: column; gap: 4px; }
   .filter-group label { font-size: 11px; font-weight: 600; color: var(--muted); letter-spacing: .04em; text-transform: uppercase; }
   .filter-group select, .filter-group input[type=month] {
     padding: 7px 10px; border: 1px solid var(--border); border-radius: 7px;
-    font-size: 13px; background: var(--bg); min-width: 130px;
+    font-size: 13px; background: var(--bg); min-width: 120px;
   }
-  .sku-select-wrap     { min-width: 320px; max-width: 480px; }
-  .product-select-wrap { min-width: 240px; max-width: 400px; }
+  .sku-select-wrap     { min-width: 200px; max-width: 280px; }
+  .product-select-wrap { min-width: 160px; max-width: 240px; }
 
   /* Tom Select override */
   .ts-wrapper.multi .ts-control { border-radius: 7px; border-color: var(--border); min-height: 36px; }
@@ -220,49 +220,44 @@
 
   <!-- Toolbar -->
   <div class="toolbar">
-    <!-- Row 1: View toggle + Product filter -->
-    <div class="toolbar-row">
-      <div class="filter-group">
-        <label>View</label>
-        <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:7px;overflow:hidden">
-          <button class="btn" :style="viewLevel==='product' ? 'background:var(--accent);color:#fff;border-radius:0' : 'background:#fff;color:var(--text);border-radius:0'" @click="switchView('product')">By Product</button>
-          <button class="btn" :style="viewLevel==='sku' ? 'background:var(--accent);color:#fff;border-radius:0' : 'background:#fff;color:var(--text);border-radius:0;border-left:1px solid var(--border)'" @click="switchView('sku')">By SKU</button>
-        </div>
-      </div>
-      <div class="filter-group product-select-wrap">
-        <label>Products</label>
-        <select id="product-select" multiple placeholder="All Products…"></select>
+    <div class="filter-group">
+      <label>View</label>
+      <div style="display:flex;gap:0;border:1px solid var(--border);border-radius:7px;overflow:hidden">
+        <button class="btn" :style="viewLevel==='product' ? 'background:var(--accent);color:#fff;border-radius:0' : 'background:#fff;color:var(--text);border-radius:0'" @click="switchView('product')">By Product</button>
+        <button class="btn" :style="viewLevel==='sku' ? 'background:var(--accent);color:#fff;border-radius:0' : 'background:#fff;color:var(--text);border-radius:0;border-left:1px solid var(--border)'" @click="switchView('sku')">By SKU</button>
       </div>
     </div>
-    <!-- Row 2: SKU filter + date range + export -->
-    <div class="toolbar-row">
-      <div class="filter-group sku-select-wrap">
-        <label>SKUs</label>
-        <select id="sku-select" multiple placeholder="All SKUs…"></select>
+    <div class="filter-group product-select-wrap">
+      <label>Products</label>
+      <select id="product-select" multiple placeholder="All Products…"></select>
+    </div>
+    <div class="filter-group sku-select-wrap">
+      <label>SKUs</label>
+      <select id="sku-select" multiple placeholder="All SKUs…"></select>
+    </div>
+    <div class="filter-group">
+      <label>From</label>
+      <input type="month" x-model="filterFrom" @change="loadData()">
+    </div>
+    <div class="filter-group">
+      <label>To</label>
+      <input type="month" x-model="filterTo" @change="loadData()">
+    </div>
+    <div class="filter-group">
+      <label>&nbsp;</label>
+      <div style="display:flex;gap:6px">
+        <button class="btn btn-outline" @click="setRange(1)">Last Month</button>
+        <button class="btn btn-outline" @click="setRange(3)">Last 3M</button>
+        <button class="btn btn-outline" @click="setRange(6)">Last 6M</button>
+        <button class="btn btn-outline" @click="setRange(12)">Last 12M</button>
       </div>
-      <div class="filter-group">
-        <label>From month</label>
-        <input type="month" x-model="filterFrom" @change="loadData()">
-      </div>
-      <div class="filter-group">
-        <label>To month</label>
-        <input type="month" x-model="filterTo" @change="loadData()">
-      </div>
-      <div class="filter-group">
-        <label>&nbsp;</label>
-        <div style="display:flex;gap:6px">
-          <button class="btn btn-outline" @click="setRange(1)">Last Month</button>
-          <button class="btn btn-outline" @click="setRange(3)">Last 3 Months</button>
-          <button class="btn btn-outline" @click="setRange(6)">Last 6 Months</button>
-        </div>
-      </div>
-      <div class="filter-group" style="margin-left:auto">
-        <label>&nbsp;</label>
-        <button class="btn btn-outline" @click="exportCsv()">
-          <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
-          Export CSV
-        </button>
-      </div>
+    </div>
+    <div class="filter-group" style="margin-left:auto">
+      <label>&nbsp;</label>
+      <button class="btn btn-outline" @click="exportCsv()">
+        <svg width="13" height="13" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"/><polyline points="7 10 12 15 17 10"/><line x1="12" y1="15" x2="12" y2="3"/></svg>
+        Export CSV
+      </button>
     </div>
   </div>
 
