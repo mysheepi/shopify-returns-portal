@@ -263,7 +263,7 @@
 
   <!-- Tabs -->
   <div class="tabs">
-    <button class="tab-btn" :class="{active: activeTab==='table'}" @click="activeTab='table'">Table</button>
+    <button class="tab-btn" :class="{active: activeTab==='table'}" @click="activeTab='table'; $nextTick(() => gridApi && gridApi.autoSizeAllColumns())">Table</button>
     <button class="tab-btn" :class="{active: activeTab==='chart'}" @click="activeTab='chart'; renderChart()">Chart</button>
   </div>
 
