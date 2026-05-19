@@ -448,6 +448,20 @@ function portal() {
         return (params.value * 100).toFixed(1) + '%';
       };
 
+      // Custom group header component — puts title on the rendered element so browser tooltip fires reliably
+      function groupHeader(tooltip) {
+        return class {
+          init(p) {
+            this.eGui = document.createElement('div');
+            this.eGui.style.cssText = 'display:flex;align-items:center;justify-content:center;width:100%;height:100%;cursor:default';
+            this.eGui.title = tooltip;
+            this.eGui.textContent = p.displayName;
+          }
+          getGui() { return this.eGui; }
+          destroy() {}
+        };
+      }
+
       // Renders integer qty; shows muted zero so it can't visually merge with adjacent "0.0%"
       const qtyRenderer = params => {
         if (params.value === null || params.value === undefined) return '—';
@@ -465,22 +479,30 @@ function portal() {
           cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
           headerClass: 'ag-right-aligned-header' },
 
-        { headerName: '30D Window', headerTooltip: 'Order Date + 30D + 10D buffer', children: [
+        { headerName: '30D Window', headerGroupComponent: groupHeader('Order Date + 30D + 10D buffer'), children: [
           { field: 'returned_30d',    headerName: 'Returned Qty', width: 115,
             cellRenderer: qtyRenderer,
             cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
             headerClass: 'ag-right-aligned-header' },
-          { field: 'return_rate_30d', headerName: 'Refund Rate',   width: 115, cellRenderer: pctRenderer },
-          { field: 'is_30d_closed',   headerName: 'Window Closed', width: 120, cellRenderer: closedRenderer },
+          { field: 'return_rate_30d', headerName: 'Refund Rate',   width: 115, cellRenderer: pctRenderer,
+            cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
+            headerClass: 'ag-right-aligned-header' },
+          { field: 'is_30d_closed',   headerName: 'Window Closed', width: 120, cellRenderer: closedRenderer,
+            cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
+            headerClass: 'ag-right-aligned-header' },
         ]},
 
-        { headerName: '100D Window', headerTooltip: 'Order Date + 100D + 10D buffer', children: [
+        { headerName: '100D Window', headerGroupComponent: groupHeader('Order Date + 100D + 10D buffer'), children: [
           { field: 'returned_100d',    headerName: 'Returned Qty', width: 115,
             cellRenderer: qtyRenderer,
             cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
             headerClass: 'ag-right-aligned-header' },
-          { field: 'return_rate_100d', headerName: 'Refund Rate',   width: 115, cellRenderer: pctRenderer },
-          { field: 'is_100d_closed',   headerName: 'Window Closed', width: 120, cellRenderer: closedRenderer },
+          { field: 'return_rate_100d', headerName: 'Refund Rate',   width: 115, cellRenderer: pctRenderer,
+            cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
+            headerClass: 'ag-right-aligned-header' },
+          { field: 'is_100d_closed',   headerName: 'Window Closed', width: 120, cellRenderer: closedRenderer,
+            cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
+            headerClass: 'ag-right-aligned-header' },
         ]},
       ];
 
