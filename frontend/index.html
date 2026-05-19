@@ -109,11 +109,12 @@
 
   /* Hide AG Grid column menu button entirely */
   .ag-header-cell-menu-button { display: none !important; }
-  /* Prevent header label text from overflowing into adjacent column */
-  .ag-header-cell-text { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; }
-  /* Subtle column separators so adjacent numeric columns don't blend together */
-  .ag-theme-alpine .ag-cell { border-right: 1px solid rgba(0,0,0,.06) !important; }
-  .ag-theme-alpine .ag-header-cell { border-right: 1px solid rgba(0,0,0,.08) !important; }
+  /* Column separators — visible enough to separate adjacent numeric values */
+  .ag-theme-alpine .ag-cell        { border-right: 1px solid #e2e8f0 !important; }
+  .ag-theme-alpine .ag-header-cell { border-right: 1px solid #e2e8f0 !important; }
+  /* Header text clipping: flex child needs min-width:0 for overflow:hidden to work */
+  .ag-header-cell-label  { overflow: hidden !important; min-width: 0; }
+  .ag-header-cell-text   { overflow: hidden !important; text-overflow: ellipsis !important; white-space: nowrap !important; min-width: 0; }
 
   /* ── Tabs ── */
   .tabs { background: var(--surface); border-bottom: 1px solid var(--border); padding: 0 24px; display: flex; gap: 0; }
