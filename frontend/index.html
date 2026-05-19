@@ -465,7 +465,7 @@ function portal() {
           cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
           headerClass: 'ag-right-aligned-header' },
 
-        { headerName: '30-day window',children: [
+        { headerName: '30D Window', headerTooltip: 'Order Date + 30D + 10D buffer', children: [
           { field: 'returned_30d',    headerName: 'Returned Qty', width: 115,
             cellRenderer: qtyRenderer,
             cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
@@ -474,7 +474,7 @@ function portal() {
           { field: 'is_30d_closed',   headerName: 'Window Closed', width: 120, cellRenderer: closedRenderer },
         ]},
 
-        { headerName: '100-day window',children: [
+        { headerName: '100D Window', headerTooltip: 'Order Date + 100D + 10D buffer', children: [
           { field: 'returned_100d',    headerName: 'Returned Qty', width: 115,
             cellRenderer: qtyRenderer,
             cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
@@ -498,6 +498,7 @@ function portal() {
           sortUnSort: '',
           menu: '',
         },
+        enableBrowserTooltips: true,
         rowHeight: 36,
         headerHeight: 38,
         groupHeaderHeight: 32,
