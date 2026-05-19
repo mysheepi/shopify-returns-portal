@@ -244,21 +244,14 @@
   <!-- Content -->
   <div class="content">
 
-    <!-- Loading -->
-    <div class="state-box" x-show="loading">
+    <!-- Loading spinner — shown before grid is ready, or while chart is refreshing -->
+    <div class="state-box" x-show="loading && (!gridApi || activeTab === 'chart')">
       <span>⏳</span>
       <p>Loading data…</p>
     </div>
 
-    <!-- Empty -->
-    <div class="state-box" x-show="!loading && rows.length === 0 && activeTab === 'table'">
-      <span>📭</span>
-      <p>No data for the selected filters. Try syncing or adjusting the date range.</p>
-    </div>
-
-    <!-- Table -->
-    <div class="grid-wrap" x-show="!loading && activeTab === 'table' && rows.length > 0"
-         id="ag-grid"></div>
+    <!-- Table — always in DOM when on table tab; AG Grid handles loading/empty overlays -->
+    <div class="grid-wrap" x-show="activeTab === 'table'" id="ag-grid"></div>
 
     <!-- Chart -->
     <div class="chart-wrap" x-show="!loading && activeTab === 'chart'">
@@ -364,8 +357,8 @@ function portal() {
           sessionStorage.setItem('portal_pw', this.password);
           this.authenticated = true;
           await Promise.all([this.loadSkus(), this.loadSettings(), this.checkSyncStatus()]);
-          await this.loadData();
-          this.$nextTick(() => this.initGrid());
+          // Init grid first (needs DOM), then load data so gridApi is ready for overlay
+          this.$nextTick(() => { this.initGrid(); this.loadData(); });
         }
       } catch(e) {
         this.loginError = 'Wrong password.';
@@ -414,8 +407,10 @@ function portal() {
 
     async loadData() {
       this.loading = true;
+      // Show AG Grid's built-in overlay (grid stays in DOM — no display:none flip)
+      if (this.gridApi) this.gridApi.showLoadingOverlay();
+
       const params = new URLSearchParams();
-      // Read directly from Tom Select instance to avoid any reactivity timing issues
       const skus = this.tomSelect ? this.tomSelect.getValue() : this.selectedSkus;
       if (skus.length) params.set('skus', skus.join(','));
       if (this.filterFrom) params.set('from', this.filterFrom);
@@ -423,7 +418,10 @@ function portal() {
 
       try {
         this.rows = await this.api('GET', `/api/returns?${params}`);
-        if (this.gridApi) this.gridApi.setGridOption('rowData', this.rows);
+        if (this.gridApi) {
+          this.gridApi.setGridOption('rowData', this.rows);
+          this.rows.length ? this.gridApi.hideOverlay() : this.gridApi.showNoRowsOverlay();
+        }
         if (this.activeTab === 'chart') this.$nextTick(() => this.renderChart());
       } finally {
         this.loading = false;
@@ -480,6 +478,7 @@ function portal() {
         groupHeaderHeight: 32,
         suppressMovableColumns: false,
         animateRows: true,
+        overlayNoRowsTemplate: '<div style="padding:20px;color:#64748b">📭 No data for the selected filters.</div>',
       };
 
       const el = document.getElementById('ag-grid');
@@ -505,6 +504,7 @@ function portal() {
       this.tomSelect = new TomSelect('#sku-select', {
         plugins: ['remove_button'],
         options,
+        maxOptions: false,
         optionClass: 'option',
         render: {
           option: (data) =>
@@ -583,7 +583,8 @@ function portal() {
     // ── CSV export ────────────────────────────────────────────────────────
     async exportCsv() {
       const params = new URLSearchParams();
-      if (this.selectedSkus.length) params.set('skus', this.selectedSkus.join(','));
+      const skus = this.tomSelect ? this.tomSelect.getValue() : this.selectedSkus;
+      if (skus.length) params.set('skus', skus.join(','));
       if (this.filterFrom) params.set('from', this.filterFrom);
       if (this.filterTo)   params.set('to',   this.filterTo);
 
