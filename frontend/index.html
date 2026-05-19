@@ -465,11 +465,11 @@ function portal() {
         { field: 'return_window_days', headerName: 'Trial', width: 80,
           valueFormatter: p => p.value + 'd' },
 
-        // 30-day window group — Ordered is first child so it aligns under the group header
+        { field: 'total_ordered', headerName: 'Ordered', width: 100,
+          cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
+          headerClass: 'ag-right-aligned-header' },
+
         { headerName: '30-day window', children: [
-          { field: 'total_ordered',   headerName: 'Ordered',     width: 100,
-            cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
-            headerClass: 'ag-right-aligned-header' },
           { field: 'returned_30d',    headerName: 'Ret. Qty',    width: 100,
             cellRenderer: qtyRenderer,
             cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
@@ -478,11 +478,7 @@ function portal() {
           { field: 'is_30d_closed',   headerName: 'Trial Ended', width: 110, cellRenderer: closedRenderer },
         ]},
 
-        // 100-day window group — same Ordered denominator shown again for self-contained readability
         { headerName: '100-day window', children: [
-          { field: 'total_ordered',    headerName: 'Ordered',      width: 100,
-            cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
-            headerClass: 'ag-right-aligned-header' },
           { field: 'returned_100d',    headerName: 'Ret. Qty',     width: 100,
             cellRenderer: qtyRenderer,
             cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
