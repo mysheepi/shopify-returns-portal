@@ -281,8 +281,15 @@
 
     <!-- Chart -->
     <div class="chart-wrap" x-show="!loading && activeTab === 'chart'">
-      <p class="chart-hint" x-text="viewLevel === 'product' ? 'Showing up to 8 products. Filter by SKU above to narrow.' : 'Showing up to 8 SKUs. Select specific SKUs above to compare.'"></p>
-      <canvas id="return-chart"></canvas>
+      <div x-show="selectedProducts.length === 0 && selectedSkus.length === 0"
+           style="display:flex;flex-direction:column;align-items:center;justify-content:center;height:320px;color:var(--muted);gap:10px">
+        <svg width="40" height="40" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.5" opacity=".4"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+        <p style="font-size:14px">Select a product or SKU above to view the chart</p>
+      </div>
+      <div x-show="selectedProducts.length > 0 || selectedSkus.length > 0">
+        <p class="chart-hint" x-text="viewLevel === 'product' ? 'Showing selected products (up to 8).' : 'Showing selected SKUs (up to 8).'"></p>
+        <canvas id="return-chart"></canvas>
+      </div>
     </div>
 
   </div>
@@ -787,14 +794,14 @@ function portal() {
     renderChart() {
       if (this.chartInstance) { this.chartInstance.destroy(); this.chartInstance = null; }
 
+      // Nothing selected — show empty state, don't render a chart
+      if (this.selectedProducts.length === 0 && this.selectedSkus.length === 0) return;
+
       const displayRows = this.getDisplayRows();
       const groupKey = this.viewLevel === 'product' ? 'product_name' : 'sku';
 
-      // Determine which series to show (up to 8)
-      const allKeys = [...new Set(displayRows.map(r => r[groupKey]))];
-      const keysToShow = (this.viewLevel === 'sku' && this.selectedSkus.length)
-        ? this.selectedSkus.slice(0, 8)
-        : allKeys.slice(0, 8);
+      // Only chart what the user has explicitly selected (up to 8)
+      const keysToShow = (this.viewLevel === 'product' ? this.selectedProducts : this.selectedSkus).slice(0, 8);
 
       const months = [...new Set(displayRows.map(r => r.order_month))].sort();
 
