@@ -109,6 +109,7 @@
 
   /* All AG Grid overrides scoped to .ag-theme-alpine on the grid div */
   .ag-theme-alpine .ag-header-cell-menu-button { display: none !important; }
+  .ag-theme-alpine .ag-header-group-cell-label { justify-content: center !important; }
   /* Visible column separators */
   .ag-theme-alpine .ag-cell        { border-right: 1px solid #cbd5e1 !important; }
   .ag-theme-alpine .ag-header-cell { border-right: 1px solid #cbd5e1 !important; }
@@ -465,26 +466,26 @@ function portal() {
         { field: 'return_window_days', headerName: 'Trial', width: 80,
           valueFormatter: p => p.value + 'd' },
 
-        { field: 'total_ordered', headerName: 'Ordered', width: 100,
+        { field: 'total_ordered', headerName: 'Ordered Qty', width: 110,
           cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
           headerClass: 'ag-right-aligned-header' },
 
-        { headerName: '30-day window', children: [
-          { field: 'returned_30d',    headerName: 'Ret. Qty',    width: 100,
+        { headerName: '30-day window',children: [
+          { field: 'returned_30d',    headerName: 'Returned Qty', width: 115,
             cellRenderer: qtyRenderer,
             cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
             headerClass: 'ag-right-aligned-header' },
-          { field: 'return_rate_30d', headerName: 'Return Rate', width: 115, cellRenderer: pctRenderer },
-          { field: 'is_30d_closed',   headerName: 'Trial Ended', width: 110, cellRenderer: closedRenderer },
+          { field: 'return_rate_30d', headerName: 'Refund Rate',   width: 115, cellRenderer: pctRenderer },
+          { field: 'is_30d_closed',   headerName: 'Window Closed', width: 120, cellRenderer: closedRenderer },
         ]},
 
-        { headerName: '100-day window', children: [
-          { field: 'returned_100d',    headerName: 'Ret. Qty',     width: 100,
+        { headerName: '100-day window',children: [
+          { field: 'returned_100d',    headerName: 'Returned Qty', width: 115,
             cellRenderer: qtyRenderer,
             cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
             headerClass: 'ag-right-aligned-header' },
-          { field: 'return_rate_100d', headerName: 'Return Rate',  width: 115, cellRenderer: pctRenderer },
-          { field: 'is_100d_closed',   headerName: 'Trial Ended',  width: 110, cellRenderer: closedRenderer },
+          { field: 'return_rate_100d', headerName: 'Refund Rate',   width: 115, cellRenderer: pctRenderer },
+          { field: 'is_100d_closed',   headerName: 'Window Closed', width: 120, cellRenderer: closedRenderer },
         ]},
       ];
 
