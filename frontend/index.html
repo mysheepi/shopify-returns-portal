@@ -1118,20 +1118,72 @@ function portal() {
       this.savingSettings = false;
     },
 
-    // Sets the product/SKU column widths from ALL rows (not just visible), then
-    // lets AG Grid auto-size the remaining columns from rendered cells.
     resizeColumns(delay = 0) {
       const doResize = () => {
         if (!this.gridApi) return;
-        // Size every column to its content (headers + cells)
-        this.gridApi.autoSizeAllColumns(false);
-        // Lock each column's auto-sized width as its minWidth so sizeColumnsToFit can only expand, never compress
-        this.gridApi.getColumns()?.forEach(col => {
-          col.getColDef().minWidth = col.getActualWidth();
+        if (!this._canvasCtx) {
+          this._canvasCtx = document.createElement('canvas').getContext('2d');
+        }
+        const ctx  = this._canvasCtx;
+        const rows = this.getDisplayRows();
+
+        const measure = (text, font) => {
+          ctx.font = font;
+          return Math.ceil(ctx.measureText(String(text ?? '')).width);
+        };
+        const HEADER_FONT = '600 12px Inter, system-ui, sans-serif';
+        const CELL_FONT   = '14px Inter, system-ui, sans-serif';
+        const HEADER_PAD  = 28;
+        const CELL_PAD    = 32;
+
+        const cols = this.gridApi.getColumns() || [];
+        const contentWidths = new Map();
+
+        cols.forEach(col => {
+          const def   = col.getColDef();
+          const field = def.field;
+          const hdr   = def.headerName || '';
+
+          // Header text width
+          let w = measure(hdr, HEADER_FONT) + HEADER_PAD;
+
+          // Cell data width across ALL rows (avoids virtualisation blind spots)
+          if (field && rows.length) {
+            for (const r of rows) {
+              const raw = r[field];
+              let text;
+              if (raw == null) {
+                text = '—';
+              } else if (field === 'return_window_days') {
+                text = raw + 'd';
+              } else if (field.startsWith('return_rate') || field === 'refund_rate_monetary') {
+                text = (raw * 100).toFixed(1) + '%';
+              } else if (field === 'total_revenue' || field === 'total_refunded_amount') {
+                text = '€' + Math.round(raw).toLocaleString('en-US');
+              } else if (field === 'is_30d_closed' || field === 'is_100d_closed') {
+                text = ''; // rendered as icon, header drives width
+              } else {
+                text = String(raw);
+              }
+              w = Math.max(w, measure(text, CELL_FONT) + CELL_PAD);
+            }
+          }
+
+          contentWidths.set(col.getColId(), Math.max(w, def.minWidth || 60));
         });
-        // Stretch columns to fill any remaining grid width
-        this.gridApi.sizeColumnsToFit();
+
+        // Apply content-sized widths
+        this.gridApi.setColumnWidths(
+          [...contentWidths.entries()].map(([key, newWidth]) => ({ key, newWidth }))
+        );
+
+        // Expand columns to fill the grid — columnLimits prevents sizeColumnsToFit
+        // from compressing any column below its content-measured width
+        this.gridApi.sizeColumnsToFit({
+          columnLimits: [...contentWidths.entries()].map(([key, minWidth]) => ({ key, minWidth })),
+        });
       };
+
       if (delay > 0) {
         setTimeout(doResize, delay);
       } else {
