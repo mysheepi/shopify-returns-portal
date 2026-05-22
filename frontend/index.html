@@ -389,9 +389,9 @@
     <div class="docs-group">
       <div class="docs-group-title">Row dimensions</div>
       <div class="docs-row"><span class="docs-col-name">SKU</span><span class="docs-col-desc">Shopify variant SKU code.</span></div>
-      <div class="docs-row"><span class="docs-col-name">Product</span><span class="docs-col-desc">Product family derived from SKU prefix (e.g. all MS.HP.* → Home Pillow).</span></div>
+      <div class="docs-row"><span class="docs-col-name">Product</span><span class="docs-col-desc">Product family grouping (e.g. all MS.HP.* SKUs → Home Pillow). Used to roll up SKU-level data in the By Product view.</span></div>
       <div class="docs-row"><span class="docs-col-name">Month</span><span class="docs-col-desc">Calendar month the order was placed (YYYY-MM). Filters and comparisons are always based on order month, not refund month.</span></div>
-      <div class="docs-row"><span class="docs-col-name">Trial</span><span class="docs-col-desc">Contractual return window for this SKU: 30 days (standard) or 100 days (Home Pillow line).</span></div>
+      <div class="docs-row"><span class="docs-col-name">Trial</span><span class="docs-col-desc">Contractual return window: 30 days (standard) or 100 days (Home Pillow line). The clock starts from when the customer <em>receives</em> the order, not the order date. Since we only know the order date in Shopify, buffer days are added to approximate the delivery date.</span></div>
     </div>
 
     <div class="docs-group">
@@ -401,9 +401,9 @@
 
     <div class="docs-group">
       <div class="docs-group-title">30D Window &amp; 100D Window</div>
-      <div class="docs-row"><span class="docs-col-name">Returned Qty</span><span class="docs-col-desc">Units where the refund (or return registration) happened within the window + buffer days from order date. Includes both DHL physical returns and goodwill refunds (customer keeps the item but is refunded). Formula: <em>days from order date to earliest of return registration date or refund date ≤ window + buffer.</em></span></div>
+      <div class="docs-row"><span class="docs-col-name">Returned Qty</span><span class="docs-col-desc">Units where a formal return was registered by the customer within the window. Only physical returns (DHL label issued via Shopify) are counted — goodwill refunds where the customer keeps the item are excluded. Timing is measured from order date + buffer days (estimated delivery date).</span></div>
       <div class="docs-row"><span class="docs-col-name">Return Rate</span><span class="docs-col-desc">Returned Qty ÷ Ordered Qty for this window. Red highlight when it exceeds the per-product threshold set in Settings.</span></div>
-      <div class="docs-row"><span class="docs-col-name">Window Closed</span><span class="docs-col-desc">✓ when every order in this month has passed the window + buffer cutoff — meaning the rate is final and no more returns can qualify. ✗ means the window is still open and the rate may increase.</span></div>
+      <div class="docs-row"><span class="docs-col-name">Window Closed</span><span class="docs-col-desc">✓ when every order in this month has passed the return deadline (order date + buffer + window days) — the rate is final and no new returns can qualify. ✗ means some orders are still within their return window and the rate may still rise.</span></div>
     </div>
 
     <div class="docs-group">
@@ -415,7 +415,7 @@
 
     <div class="docs-group">
       <div class="docs-group-title">Return Buffer (Settings)</div>
-      <div class="docs-row"><span class="docs-col-name">Buffer days</span><span class="docs-col-desc">Extra days added to each window to account for return shipping transit and internal refund processing time. Affects Returned Qty, Return Rate, and Window Closed for both windows. Default: 10 days.</span></div>
+      <div class="docs-row"><span class="docs-col-name">Buffer days</span><span class="docs-col-desc">Approximates the gap between order date and delivery date. Because return windows start from receipt (not order date), buffer days are added to the order date to estimate when the customer received the item. The effective return deadline from order date is: <em>order date + buffer + window days</em>. Default: 10 days (estimated shipping time). Affects Returned Qty, Return Rate, and Window Closed for both windows.</span></div>
     </div>
 
     <div style="display:flex;justify-content:flex-end;margin-top:8px">
