@@ -347,6 +347,21 @@
         <span x-text="savingSettings ? 'Saving…' : 'Save & recalculate'"></span>
       </button>
     </div>
+
+    <div style="margin-top:24px;padding-top:20px;border-top:1px solid var(--border)">
+      <label style="font-size:11px;font-weight:700;letter-spacing:.06em;color:#b91c1c">RESYNC</label>
+      <p style="font-size:13px;color:var(--muted);margin:6px 0 12px">
+        Forces a full re-pull of all orders from Shopify from the beginning.
+        Required after code updates that added new fields (return dates, prices, refund amounts).
+        This may take several minutes.
+      </p>
+      <button class="btn btn-outline"
+              style="border-color:#fca5a5;color:#b91c1c;background:#fff1f2"
+              @click="triggerFullSync()"
+              :disabled="syncRunning">
+        ↺ Force Full Resync
+      </button>
+    </div>
   </div>
 </div>
 
@@ -966,6 +981,16 @@ function portal() {
         this.startSyncPoll();
       } catch(e) {
         alert('Sync failed to start: ' + e.message);
+      }
+    },
+    async triggerFullSync() {
+      if (!confirm('This will re-pull all orders from the beginning and may take several minutes. Continue?')) return;
+      try {
+        await this.api('POST', '/api/sync/trigger?force=true');
+        this.showSettings = false;
+        this.startSyncPoll();
+      } catch(e) {
+        alert('Full resync failed to start: ' + e.message);
       }
     },
 

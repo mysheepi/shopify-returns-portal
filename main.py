@@ -187,8 +187,22 @@ def sync_status(x_portal_password: Optional[str] = Header(default=None)):
 
 
 @app.post("/api/sync/trigger")
-def sync_trigger(x_portal_password: Optional[str] = Header(default=None)):
+def sync_trigger(
+    force: bool = Query(default=False),
+    x_portal_password: Optional[str] = Header(default=None),
+):
     require_auth(x_portal_password)
+    if force:
+        with get_db() as conn:
+            execute(conn, """
+                UPDATE sync_log SET watermark = NULL
+                WHERE id = (
+                    SELECT id FROM sync_log
+                    WHERE status = 'complete'
+                    ORDER BY completed_at DESC
+                    LIMIT 1
+                )
+            """)
     started = trigger_sync()
     if not started:
         raise HTTPException(status_code=409, detail="Sync already running")
