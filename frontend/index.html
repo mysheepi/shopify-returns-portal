@@ -762,10 +762,8 @@ function portal() {
         headerClass: 'ag-right-aligned-header' });
 
       const win30 = { headerName: '30D Window',
-        headerGroupComponent: groupHeader(() => `Order Date + 30D + ${this.bufferInput}D buffer`),
         children: [ Q('returned_30d','Returned Qty'), R('return_rate_30d','Return Rate'), C('is_30d_closed','Window Closed') ] };
       const win100 = { headerName: '100D Window',
-        headerGroupComponent: groupHeader(() => `Order Date + 100D + ${this.bufferInput}D buffer`),
         children: [ Q('returned_100d','Returned Qty'), R('return_rate_100d','Return Rate'), C('is_100d_closed','Window Closed') ] };
       const allRefunds = { headerName: 'All Refunds',
         headerGroupComponent: groupHeader(() => 'All refunds to date (goodwill + physical), monetary'),
@@ -1125,41 +1123,20 @@ function portal() {
     resizeColumns(delay = 0) {
       const doResize = () => {
         if (!this.gridApi) return;
-        this.fitTextColumns();          // canvas-measure product/SKU, lock their minWidth
-        this.gridApi.sizeColumnsToFit(); // stretch all cols to fill grid width
+        // Size every column to its content (headers + cells)
+        this.gridApi.autoSizeAllColumns(false);
+        // Lock each column's auto-sized width as its minWidth so sizeColumnsToFit can only expand, never compress
+        this.gridApi.getColumns()?.forEach(col => {
+          col.getColDef().minWidth = col.getActualWidth();
+        });
+        // Stretch columns to fill any remaining grid width
+        this.gridApi.sizeColumnsToFit();
       };
-      // double-rAF ensures AG Grid has finished its own rendering pass
       if (delay > 0) {
         setTimeout(doResize, delay);
       } else {
         requestAnimationFrame(() => requestAnimationFrame(doResize));
       }
-    },
-
-    fitTextColumns() {
-      if (!this.gridApi) return;
-      const rows = this.getDisplayRows();
-      if (!rows.length) return;
-      if (!this._canvasCtx) {
-        this._canvasCtx = document.createElement('canvas').getContext('2d');
-        this._canvasCtx.font = '15px Inter, system-ui, sans-serif';
-      }
-      const ctx = this._canvasCtx;
-      const PAD = 38;
-      const w = str => ctx.measureText(String(str ?? '')).width + PAD;
-      const pairs = [];
-      if (this.viewLevel === 'sku') {
-        pairs.push({ key: 'sku',          newWidth: Math.ceil(Math.max(w('SKU'),     ...rows.map(r => w(r.sku          || '')))) });
-        pairs.push({ key: 'product_name', newWidth: Math.ceil(Math.max(w('Product'), ...rows.map(r => w(r.product_name || '')))) });
-      } else {
-        pairs.push({ key: 'product_name', newWidth: Math.ceil(Math.max(w('Product'), ...rows.map(r => w(r.product_name || '')))) });
-      }
-      // Lock minWidth on the col def so sizeColumnsToFit() never squishes below content width
-      pairs.forEach(({ key, newWidth }) => {
-        const col = this.gridApi.getColumn(key);
-        if (col) col.getColDef().minWidth = newWidth;
-      });
-      this.gridApi.setColumnWidths(pairs);
     },
 
     setThreshold(product, val) {
