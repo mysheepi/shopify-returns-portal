@@ -761,11 +761,11 @@ function portal() {
         cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
         headerClass: 'ag-right-aligned-header' });
 
-      const win30 = { headerName: '30D Window',
+      const win30 = { headerName: '30D Return Window',
         children: [ Q('returned_30d','Returned Qty'), R('return_rate_30d','Return Rate'), C('is_30d_closed','Window Closed') ] };
-      const win100 = { headerName: '100D Window',
+      const win100 = { headerName: '100D Return Window',
         children: [ Q('returned_100d','Returned Qty'), R('return_rate_100d','Return Rate'), C('is_100d_closed','Window Closed') ] };
-      const allRefunds = { headerName: 'All Refunds',
+      const allRefunds = { headerName: 'All Refunds To Date',
         headerGroupComponent: groupHeader(() => 'All refunds to date (goodwill + physical), monetary'),
         children: [ E('total_revenue','Revenue €'), E('total_refunded_amount','Refunded €'), R('refund_rate_monetary','Refund Rate') ] };
       const orderedCol = N('total_ordered', 'Ordered Qty');
