@@ -225,12 +225,15 @@ class TestUpsertOrder:
         # Find the refund insert
         refund_inserts = [p for sql, p in executed if "refund_line_items" in sql]
         assert len(refund_inserts) == 1
-        # The 8th param is days_to_refund per the insert column order.
         params = refund_inserts[0]
-        assert params[-1] == 20, f"days_to_refund should be 20, got {params[-1]}"
-        # order_date in refund row matches the ORDER's date, not refund date.
-        assert params[-3] == date(2024, 1, 1)
-        assert params[-2] == date(2024, 1, 21)
+        # Tuple layout: (shopify_refund_id[0], shopify_refund_line_item_id[1],
+        #   order_line_item_id[2], sku[3], qty_returned[4],
+        #   order_date[5], refund_date[6], return_date[7], days_to_refund[8],
+        #   restock_type[9], return_id[10], refund_subtotal[11])
+        assert params[8] == 20, f"days_to_refund should be 20, got {params[8]}"
+        # order_date and refund_date are at indices 5 and 6
+        assert params[5] == date(2024, 1, 1)
+        assert params[6] == date(2024, 1, 21)
 
     def test_skips_unfulfilled_line_items(self):
         order = {
@@ -245,18 +248,33 @@ class TestUpsertOrder:
             "refunds": [],
         }
 
-        line_item_inserts = []
+        fetchone_calls = []
 
-        def _exec(c, sql, p=None):
-            if "INSERT INTO order_line_items" in sql:
-                line_item_inserts.append(p)
+        def _recording_fetchone(c, sql, p=None):
+            fetchone_calls.append((sql, p))
+            return _make_fetchone_factory({"SKU-A"})(c, sql, p)
 
-        with patch("sync.fetchone", side_effect=_make_fetchone_factory({"SKU-A"})), \
-             patch("sync.execute", side_effect=_exec):
+        with patch("sync.fetchone", side_effect=_recording_fetchone), \
+             patch("sync.execute"):
             sync._upsert_order(object(), order)
 
-        # Only one *fulfilled* line item should reach the DB. fetchone
-        # handles the INSERTs via RETURNING, so check via captured calls.
+        # Only one *fulfilled* line item (id=5102, qty=3) should reach the DB.
+        li_inserts = [
+            p for sql, p in fetchone_calls
+            if "INSERT INTO order_line_items" in sql
+        ]
+        assert len(li_inserts) == 1, (
+            f"Expected exactly 1 order_line_items INSERT, got {len(li_inserts)}"
+        )
+        # The inserted item must be the fulfilled one (id=5102, qty=3)
+        inserted_shopify_li_id = li_inserts[0][0]
+        inserted_qty = li_inserts[0][3]
+        assert inserted_shopify_li_id == 5102, (
+            f"Expected shopify_line_item_id=5102, got {inserted_shopify_li_id}"
+        )
+        assert inserted_qty == 3, (
+            f"Expected quantity=3, got {inserted_qty}"
+        )
 
     def test_skips_unknown_skus(self):
         """An SKU not in sku_config must not be inserted."""
@@ -432,13 +450,20 @@ class TestUpsertOrder:
             "line_items": [],
             "refunds": [],
         }
-        captured = []
-        with patch("sync.fetchone",
-                   side_effect=lambda c, sql, p=None: captured.append((sql, p))
-                                                       or {"id": "order-uuid"}), \
+        fetchone_calls = []
+
+        factory = _make_fetchone_factory(set())  # no known SKUs; line_items is empty
+
+        def _recording_fetchone(c, sql, p=None):
+            fetchone_calls.append((sql, p))
+            return factory(c, sql, p)
+
+        with patch("sync.fetchone", side_effect=_recording_fetchone), \
              patch("sync.execute"):
             sync._upsert_order(object(), order)
-        order_insert = next(c for c in captured if "INSERT INTO orders" in c[0])
+
+        order_insert = next(c for c in fetchone_calls if "INSERT INTO orders" in c[0])
+        # params[2] is the updated_at value — must equal created_at when missing
         assert order_insert[1][2] == "2024-09-01T00:00:00Z"
 
 
@@ -493,6 +518,15 @@ class TestFetchPage:
             with pytest.raises(real_requests.Timeout):
                 sync._fetch_page("http://x", {}, max_retries=3)
 
+    def test_propagates_5xx_error(self):
+        """A 5xx response triggers raise_for_status which must propagate to the caller."""
+        import requests as real_requests
+        mock_500 = MagicMock(status_code=500, headers={})
+        mock_500.raise_for_status.side_effect = real_requests.HTTPError("500 Server Error")
+        with patch("sync.requests.get", return_value=mock_500):
+            with pytest.raises(real_requests.HTTPError):
+                sync._fetch_page("http://x", {})
+
 
 # ── Headers helper ───────────────────────────────────────────────────────────
 
@@ -500,3 +534,138 @@ def test_headers_includes_shopify_access_token():
     h = sync._headers()
     assert "X-Shopify-Access-Token" in h
     assert h["X-Shopify-Access-Token"] == "shpat_test_token"
+
+
+# ── _run_sync_worker orchestration ──────────────────────────────────────────
+
+def _make_sync_worker_patches(
+    fetch_page_side_effect=None,
+    upsert_order_return=0,
+    fail_fetch=False,
+):
+    """Return a dict of patch targets for _run_sync_worker tests."""
+    fake_db_cm = MagicMock()
+    fake_db_cm.__enter__ = MagicMock(return_value="fake-conn")
+    fake_db_cm.__exit__ = MagicMock(return_value=False)
+
+    return fake_db_cm
+
+
+class TestRunSyncWorker:
+    """Tests for the _run_sync_worker orchestration function."""
+
+    def _base_patches(self):
+        """Context-manager helper: apply all standard patches and yield them."""
+        from contextlib import ExitStack
+        return ExitStack()
+
+    def _run_with_patches(
+        self,
+        fetch_page_side_effect,
+        upsert_order_return_value=1,
+    ):
+        """Run _run_sync_worker with controlled mocks; return the patched mocks."""
+        fake_conn_cm = MagicMock()
+        fake_conn_cm.__enter__ = MagicMock(return_value="fake-conn")
+        fake_conn_cm.__exit__ = MagicMock(return_value=False)
+
+        mocks = {}
+
+        with patch("sync.get_db", return_value=fake_conn_cm) as m_get_db, \
+             patch("sync.fetchone", return_value={"orders_synced": 0, "refunds_synced": 0}) as m_fetchone, \
+             patch("sync.execute") as m_execute, \
+             patch("sync._fetch_page", side_effect=fetch_page_side_effect) as m_fp, \
+             patch("sync._upsert_order", return_value=upsert_order_return_value) as m_uo, \
+             patch("sync.run_aggregation") as m_agg, \
+             patch("sync._create_sync_log", return_value="sync-log-uuid") as m_csl, \
+             patch("sync._complete_sync") as m_cs, \
+             patch("sync._fail_sync") as m_fs, \
+             patch("sync._determine_sync_type", return_value=("full", None)) as m_dst, \
+             patch("sync._resume_cursor", return_value=(None, None)) as m_rc, \
+             patch("sync._update_sync_progress") as m_usp:
+            mocks.update(
+                get_db=m_get_db, fetchone=m_fetchone, execute=m_execute,
+                fetch_page=m_fp, upsert_order=m_uo, run_aggregation=m_agg,
+                create_sync_log=m_csl, complete_sync=m_cs, fail_sync=m_fs,
+                determine_sync_type=m_dst, resume_cursor=m_rc,
+                update_sync_progress=m_usp,
+            )
+            try:
+                sync._run_sync_worker()
+            except Exception:
+                pass  # allow error path tests to capture without re-raising
+
+        return mocks
+
+    def _make_page_responses(self, orders_on_first_page):
+        """Build side_effect list: first call returns orders, second returns []."""
+        page1 = MagicMock()
+        page1.json.return_value = {"orders": orders_on_first_page}
+        page1.headers = {}
+
+        page2 = MagicMock()
+        page2.json.return_value = {"orders": []}
+        page2.headers = {}
+
+        return [page1, page2]
+
+    def test_calls_aggregation_after_page_loop(self):
+        """run_aggregation must be called exactly once after the pagination loop."""
+        one_order = [{"id": 99, "created_at": "2024-01-01T00:00:00Z",
+                      "updated_at": "2024-01-01T00:00:00Z",
+                      "line_items": [], "refunds": []}]
+        responses = self._make_page_responses(one_order)
+        mocks = self._run_with_patches(fetch_page_side_effect=responses)
+        mocks["run_aggregation"].assert_called_once()
+
+    def test_marks_complete_on_success(self):
+        """_complete_sync must be called when the worker finishes without error."""
+        responses = self._make_page_responses([])
+        mocks = self._run_with_patches(fetch_page_side_effect=responses)
+        mocks["complete_sync"].assert_called_once()
+        mocks["fail_sync"].assert_not_called()
+
+    def test_marks_error_on_exception(self):
+        """When _fetch_page raises, _fail_sync must be called with the error message."""
+        mocks = self._run_with_patches(
+            fetch_page_side_effect=RuntimeError("boom")
+        )
+        mocks["fail_sync"].assert_called_once()
+        # The first positional arg after sync_id is the exception
+        call_args = mocks["fail_sync"].call_args
+        error_arg = call_args.args[1] if call_args.args else call_args.kwargs.get("error_msg")
+        assert "boom" in str(error_arg)
+        # Status error field should also be set
+        status = sync.get_status()
+        assert status["error"] == "boom"
+
+    def test_resume_uses_saved_cursor(self):
+        """When _resume_cursor returns a cursor, _fetch_page starts at that cursor
+        and _create_sync_log is skipped (we reuse the existing sync log row)."""
+        fake_conn_cm = MagicMock()
+        fake_conn_cm.__enter__ = MagicMock(return_value="fake-conn")
+        fake_conn_cm.__exit__ = MagicMock(return_value=False)
+
+        page_resp = MagicMock()
+        page_resp.json.return_value = {"orders": []}
+        page_resp.headers = {}
+
+        with patch("sync.get_db", return_value=fake_conn_cm), \
+             patch("sync.fetchone",
+                   return_value={"orders_synced": 5, "refunds_synced": 2}), \
+             patch("sync.execute"), \
+             patch("sync._fetch_page", return_value=page_resp) as m_fp, \
+             patch("sync.run_aggregation"), \
+             patch("sync._create_sync_log") as m_csl, \
+             patch("sync._complete_sync"), \
+             patch("sync._fail_sync"), \
+             patch("sync._determine_sync_type", return_value=("full", None)), \
+             patch("sync._resume_cursor",
+                   return_value=("resume-log-id", "page_cursor_xyz")), \
+             patch("sync._update_sync_progress"):
+            sync._run_sync_worker()
+
+        m_csl.assert_not_called()
+        first_call_params = m_fp.call_args_list[0].args[1]
+        assert first_call_params.get("page_info") == "page_cursor_xyz"
+        assert first_call_params.get("limit") == 250

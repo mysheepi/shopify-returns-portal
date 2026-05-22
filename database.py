@@ -37,12 +37,13 @@ def get_db():
 
 
 def init_db():
-    migration_path = os.path.join(os.path.dirname(__file__), "migrations", "001_init.sql")
-    with open(migration_path) as f:
-        sql = f.read()
+    migrations_dir = os.path.join(os.path.dirname(__file__), "migrations")
+    files = sorted(f for f in os.listdir(migrations_dir) if f.endswith(".sql"))
     with get_db() as conn:
         with conn.cursor() as cur:
-            cur.execute(sql)
+            for fname in files:
+                with open(os.path.join(migrations_dir, fname)) as f:
+                    cur.execute(f.read())
 
 
 def query(conn, sql, params=None):

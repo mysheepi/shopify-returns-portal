@@ -36,7 +36,10 @@
     --muted:   #64748b;
   }
 
-  body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); font-size: 14px; }
+  body { font-family: 'Inter', system-ui, sans-serif; background: var(--bg); color: var(--text); font-size: 15px; }
+
+  /* Propagate font size into AG Grid cells */
+  .ag-theme-alpine { --ag-font-size: 15px; }
 
   /* ── Login ── */
   .login-wrap {
@@ -617,8 +620,13 @@ function portal() {
         if (params.value === 0) return '<span style="color:#94a3b8">0</span>';
         return String(params.value);
       };
+      const currRenderer = params => {
+        if (params.value === null || params.value === undefined) return '—';
+        if (params.value === 0) return '<span style="color:#94a3b8">€0</span>';
+        return '€' + Number(params.value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      };
 
-      const columnDefs = this.buildColumnDefs(closedRenderer, pctRenderer, qtyRenderer, groupHeader);
+      const columnDefs = this.buildColumnDefs(closedRenderer, pctRenderer, qtyRenderer, currRenderer, groupHeader);
 
       const gridOptions = {
         columnDefs,
@@ -650,9 +658,9 @@ function portal() {
       this.gridApi = agGrid.createGrid(el, gridOptions);
     },
 
-    buildColumnDefs(closedRenderer, pctRenderer, qtyRenderer, groupHeader) {
+    buildColumnDefs(closedRenderer, pctRenderer, qtyRenderer, currRenderer, groupHeader) {
       // Shared metric column groups (same in both views)
-      const R = (f, h) => ({ field: f, headerName: h, cellRenderer: pctRenderer,
+      const R = (f, h) => ({ field: f, headerName: h, minWidth: 100, cellRenderer: pctRenderer,
         cellStyle: params => {
           const base = { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' };
           if (params.value == null) return base;
@@ -665,24 +673,30 @@ function portal() {
             : base;
         },
         headerClass: 'ag-right-aligned-header' });
-      const Q = (f, h) => ({ field: f, headerName: h, cellRenderer: qtyRenderer,
+      const Q = (f, h) => ({ field: f, headerName: h, minWidth: 100, cellRenderer: qtyRenderer,
         cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
         headerClass: 'ag-right-aligned-header' });
-      const C = (f, h) => ({ field: f, headerName: h, cellRenderer: closedRenderer,
+      const E = (f, h) => ({ field: f, headerName: h, minWidth: 110, cellRenderer: currRenderer,
         cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
         headerClass: 'ag-right-aligned-header' });
-      const N = (f, h) => ({ field: f, headerName: h,
+      const C = (f, h) => ({ field: f, headerName: h, minWidth: 115, cellRenderer: closedRenderer,
+        cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
+        headerClass: 'ag-right-aligned-header' });
+      const N = (f, h) => ({ field: f, headerName: h, minWidth: 100,
         cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
         headerClass: 'ag-right-aligned-header' });
 
       const win30 = { headerName: '30D Window',
         headerGroupComponent: groupHeader(() => `Order Date + 30D + ${this.bufferInput}D buffer`),
-        children: [ Q('returned_30d','Returned Qty'), R('return_rate_30d','Refund Rate'), C('is_30d_closed','Window Closed') ] };
+        children: [ Q('returned_30d_physical','Returned Qty'), R('return_rate_30d_physical','Return Rate'), C('is_30d_closed','Window Closed') ] };
       const win100 = { headerName: '100D Window',
         headerGroupComponent: groupHeader(() => `Order Date + 100D + ${this.bufferInput}D buffer`),
-        children: [ Q('returned_100d','Returned Qty'), R('return_rate_100d','Refund Rate'), C('is_100d_closed','Window Closed') ] };
+        children: [ Q('returned_100d_physical','Returned Qty'), R('return_rate_100d_physical','Return Rate'), C('is_100d_closed','Window Closed') ] };
+      const allRefunds = { headerName: 'All Refunds',
+        headerGroupComponent: groupHeader(() => 'All refunds to date (goodwill + physical), monetary'),
+        children: [ E('total_refunded_amount','Refunded €'), R('refund_rate_monetary','Refund Rate') ] };
       const orderedCol = N('total_ordered', 'Ordered Qty');
-      const trialCol = { field: 'return_window_days', headerName: 'Trial',
+      const trialCol = { field: 'return_window_days', headerName: 'Trial', minWidth: 65,
         valueFormatter: p => p.value != null ? p.value + 'd' : (this.viewLevel === 'product' ? 'Mixed' : '—'),
         cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
         headerClass: 'ag-right-aligned-header' };
@@ -691,18 +705,18 @@ function portal() {
         return [
           { field: 'sku',          headerName: 'SKU',     pinned: 'left', width: 230, filter: true, sort: 'asc', sortIndex: 1 },
           { field: 'product_name', headerName: 'Product', width: 180,  sort: 'asc', sortIndex: 0 },
-          { field: 'order_month',  headerName: 'Month', sort: 'asc', sortIndex: 2,
+          { field: 'order_month',  headerName: 'Month', sort: 'asc', sortIndex: 2, minWidth: 90,
             cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
             headerClass: 'ag-right-aligned-header' },
-          trialCol, orderedCol, win30, win100,
+          trialCol, orderedCol, win30, win100, allRefunds,
         ];
       } else {
         return [
           { field: 'product_name', headerName: 'Product', pinned: 'left', width: 220, filter: true, sort: 'asc', sortIndex: 0 },
-          { field: 'order_month',  headerName: 'Month', sort: 'asc', sortIndex: 1,
+          { field: 'order_month',  headerName: 'Month', sort: 'asc', sortIndex: 1, minWidth: 90,
             cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
             headerClass: 'ag-right-aligned-header' },
-          trialCol, orderedCol, win30, win100,
+          trialCol, orderedCol, win30, win100, allRefunds,
         ];
       }
     },
@@ -724,22 +738,26 @@ function portal() {
         const key  = `${prod}||${r.order_month}`;
         if (!map[key]) {
           map[key] = { product_name: prod, order_month: r.order_month,
-            total_ordered: 0, returned_30d: 0, returned_100d: 0,
+            total_ordered: 0, total_revenue: 0, total_refunded_amount: 0,
+            returned_30d_physical: 0, returned_100d_physical: 0,
             is_30d_closed: true, is_100d_closed: true,
             return_window_days: r.return_window_days };
         }
         const g = map[key];
-        g.total_ordered  += r.total_ordered  || 0;
-        g.returned_30d   += r.returned_30d   || 0;
-        g.returned_100d  += r.returned_100d  || 0;
-        g.is_30d_closed   = g.is_30d_closed  && !!r.is_30d_closed;
-        g.is_100d_closed  = g.is_100d_closed && !!r.is_100d_closed;
+        g.total_ordered            += r.total_ordered            || 0;
+        g.total_revenue            += r.total_revenue            || 0;
+        g.total_refunded_amount    += r.total_refunded_amount    || 0;
+        g.returned_30d_physical    += r.returned_30d_physical    || 0;
+        g.returned_100d_physical   += r.returned_100d_physical   || 0;
+        g.is_30d_closed             = g.is_30d_closed  && !!r.is_30d_closed;
+        g.is_100d_closed            = g.is_100d_closed && !!r.is_100d_closed;
         if (g.return_window_days !== r.return_window_days) g.return_window_days = null;
       }
       return Object.values(map).map(g => ({
         ...g,
-        return_rate_30d:  g.total_ordered ? g.returned_30d  / g.total_ordered : null,
-        return_rate_100d: g.total_ordered ? g.returned_100d / g.total_ordered : null,
+        return_rate_30d_physical:  g.total_ordered ? g.returned_30d_physical  / g.total_ordered : null,
+        return_rate_100d_physical: g.total_ordered ? g.returned_100d_physical / g.total_ordered : null,
+        refund_rate_monetary:      g.total_revenue ? g.total_refunded_amount  / g.total_revenue  : null,
       }));
     },
 
@@ -779,6 +797,11 @@ function portal() {
         if (params.value === 0) return '<span style="color:#94a3b8">0</span>';
         return String(params.value);
       };
+      const currRenderer = params => {
+        if (params.value === null || params.value === undefined) return '—';
+        if (params.value === 0) return '<span style="color:#94a3b8">€0</span>';
+        return '€' + Number(params.value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+      };
       const groupHeader = (getTooltip) => class {
         init(p) {
           this.eGui = document.createElement('div');
@@ -789,7 +812,7 @@ function portal() {
         getGui() { return this.eGui; }
         destroy() {}
       };
-      this.gridApi.setGridOption('columnDefs', this.buildColumnDefs(closedRenderer, pctRenderer, qtyRenderer, groupHeader));
+      this.gridApi.setGridOption('columnDefs', this.buildColumnDefs(closedRenderer, pctRenderer, qtyRenderer, currRenderer, groupHeader));
       this.gridApi.setGridOption('rowData', this.getDisplayRows());
       this.resizeColumns();
       if (this.activeTab === 'chart') this.$nextTick(() => this.renderChart());
@@ -868,9 +891,11 @@ function portal() {
         const seriesRows = displayRows.filter(r => r[groupKey] === key);
         const byMonth = Object.fromEntries(seriesRows.map(r => [r.order_month, r]));
 
+        const rate30Field  = 'return_rate_30d_physical';
+        const rate100Field = 'return_rate_100d_physical';
         datasets.push({
           label: `${key} (30d)`,
-          data: months.map(m => byMonth[m] ? (byMonth[m].return_rate_30d * 100).toFixed(2) : null),
+          data: months.map(m => byMonth[m] ? (byMonth[m][rate30Field] * 100).toFixed(2) : null),
           borderColor: color,
           backgroundColor: color + '22',
           borderWidth: 2,
@@ -880,7 +905,7 @@ function portal() {
         });
         datasets.push({
           label: `${key} (100d)`,
-          data: months.map(m => byMonth[m] ? (byMonth[m].return_rate_100d * 100).toFixed(2) : null),
+          data: months.map(m => byMonth[m] ? (byMonth[m][rate100Field] * 100).toFixed(2) : null),
           borderColor: color,
           backgroundColor: 'transparent',
           borderWidth: 2,
@@ -1015,8 +1040,8 @@ function portal() {
     resizeColumns(delay = 0) {
       const doResize = () => {
         if (!this.gridApi) return;
-        this.gridApi.autoSizeAllColumns(); // size numeric/badge cols from visible rows
-        this.fitTextColumns();             // then override product/SKU from full dataset
+        this.fitTextColumns();          // canvas-measure product/SKU, lock their minWidth
+        this.gridApi.sizeColumnsToFit(); // stretch all cols to fill grid width
       };
       // double-rAF ensures AG Grid has finished its own rendering pass
       if (delay > 0) {
@@ -1030,22 +1055,26 @@ function portal() {
       if (!this.gridApi) return;
       const rows = this.getDisplayRows();
       if (!rows.length) return;
-      // Canvas gives accurate text width regardless of which rows are virtualised
       if (!this._canvasCtx) {
         this._canvasCtx = document.createElement('canvas').getContext('2d');
-        this._canvasCtx.font = '13px Inter, system-ui, sans-serif';
+        this._canvasCtx.font = '15px Inter, system-ui, sans-serif';
       }
       const ctx = this._canvasCtx;
-      const PAD = 38; // left + right cell padding
+      const PAD = 38;
       const w = str => ctx.measureText(String(str ?? '')).width + PAD;
-      const updates = [];
+      const pairs = [];
       if (this.viewLevel === 'sku') {
-        updates.push({ key: 'sku',          newWidth: Math.ceil(Math.max(w('SKU'),     ...rows.map(r => w(r.sku          || '')))) });
-        updates.push({ key: 'product_name', newWidth: Math.ceil(Math.max(w('Product'), ...rows.map(r => w(r.product_name || '')))) });
+        pairs.push({ key: 'sku',          newWidth: Math.ceil(Math.max(w('SKU'),     ...rows.map(r => w(r.sku          || '')))) });
+        pairs.push({ key: 'product_name', newWidth: Math.ceil(Math.max(w('Product'), ...rows.map(r => w(r.product_name || '')))) });
       } else {
-        updates.push({ key: 'product_name', newWidth: Math.ceil(Math.max(w('Product'), ...rows.map(r => w(r.product_name || '')))) });
+        pairs.push({ key: 'product_name', newWidth: Math.ceil(Math.max(w('Product'), ...rows.map(r => w(r.product_name || '')))) });
       }
-      this.gridApi.setColumnWidths(updates);
+      // Lock minWidth on the col def so sizeColumnsToFit() never squishes below content width
+      pairs.forEach(({ key, newWidth }) => {
+        const col = this.gridApi.getColumn(key);
+        if (col) col.getColDef().minWidth = newWidth;
+      });
+      this.gridApi.setColumnWidths(pairs);
     },
 
     setThreshold(product, val) {

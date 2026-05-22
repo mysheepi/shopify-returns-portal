@@ -1,9 +1,12 @@
 import os
+import re as _re
 import json
 import logging
 import secrets
 from contextlib import asynccontextmanager
 from typing import Optional
+
+_MONTH_RE = _re.compile(r'^\d{4}-(0[1-9]|1[0-2])$')
 
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
@@ -36,7 +39,7 @@ app = FastAPI(title="Mysheepi Returns Portal", lifespan=lifespan)
 # ── Auth dependency ──────────────────────────────────────────────────────────
 
 def require_auth(x_portal_password: Optional[str] = Header(default=None)):
-    if not x_portal_password or not secrets.compare_digest(
+    if not PORTAL_PASSWORD or not x_portal_password or not secrets.compare_digest(
         x_portal_password, PORTAL_PASSWORD
     ):
         raise HTTPException(status_code=401, detail="Unauthorized")
@@ -85,6 +88,11 @@ def get_returns(
 ):
     require_auth(x_portal_password)
 
+    if from_month and not _MONTH_RE.match(from_month):
+        raise HTTPException(status_code=400, detail="Invalid 'from' month, expected YYYY-MM")
+    if to_month and not _MONTH_RE.match(to_month):
+        raise HTTPException(status_code=400, detail="Invalid 'to' month, expected YYYY-MM")
+
     conditions = []
     params: list = []
 
@@ -105,8 +113,12 @@ def get_returns(
     sql = f"""
         SELECT sku, TO_CHAR(order_month, 'YYYY-MM') AS order_month,
                return_window_days, total_ordered,
-               returned_30d,  return_rate_30d,  is_30d_closed,
-               returned_100d, return_rate_100d, is_100d_closed
+               returned_30d,           return_rate_30d,           is_30d_closed,
+               returned_100d,          return_rate_100d,          is_100d_closed,
+               returned_30d_physical,  return_rate_30d_physical,
+               returned_100d_physical, return_rate_100d_physical,
+               total_revenue,
+               total_refunded_amount,  refund_rate_monetary
         FROM sku_monthly_stats
         {where}
         ORDER BY sku, order_month
@@ -133,8 +145,12 @@ def export_returns(
     output = io.StringIO()
     writer = csv.DictWriter(output, fieldnames=[
         "sku", "order_month", "return_window_days", "total_ordered",
-        "returned_30d", "return_rate_30d", "is_30d_closed",
-        "returned_100d", "return_rate_100d", "is_100d_closed",
+        "returned_30d",          "return_rate_30d",          "is_30d_closed",
+        "returned_100d",         "return_rate_100d",         "is_100d_closed",
+        "returned_30d_physical", "return_rate_30d_physical",
+        "returned_100d_physical","return_rate_100d_physical",
+        "total_revenue",
+        "total_refunded_amount", "refund_rate_monetary",
     ])
     writer.writeheader()
     writer.writerows(rows)

@@ -201,7 +201,10 @@ def test_returns_select_includes_all_documented_columns(client, auth_headers, fa
     sql = mock_q.call_args.args[1]
     for col in ["sku", "order_month", "return_window_days", "total_ordered",
                 "returned_30d", "return_rate_30d", "is_30d_closed",
-                "returned_100d", "return_rate_100d", "is_100d_closed"]:
+                "returned_100d", "return_rate_100d", "is_100d_closed",
+                "returned_30d_physical", "return_rate_30d_physical",
+                "returned_100d_physical", "return_rate_100d_physical",
+                "total_revenue", "total_refunded_amount", "refund_rate_monetary"]:
         assert col in sql
 
 
@@ -299,14 +302,21 @@ def test_get_settings_returns_default_when_no_row(client, auth_headers, fake_db_
          patch("main.fetchone", return_value=None):
         r = client.get("/api/settings", headers=auth_headers)
     assert r.status_code == 200
-    assert r.json() == {"return_buffer_days": 10}
+    body = r.json()
+    assert body["return_buffer_days"] == 10
+    assert "return_rate_thresholds" in body
 
 
 def test_get_settings_returns_stored_value(client, auth_headers, fake_db_ctx):
+    # fetchone is called twice: first for buffer, then for thresholds.
+    buf_row = {"return_buffer_days": 25}
+    thr_row = {"value": '{"_default": 15}'}
     with patch("main.get_db", fake_db_ctx), \
-         patch("main.fetchone", return_value={"return_buffer_days": 25}):
+         patch("main.fetchone", side_effect=[buf_row, thr_row]):
         r = client.get("/api/settings", headers=auth_headers)
-    assert r.json() == {"return_buffer_days": 25}
+    body = r.json()
+    assert body["return_buffer_days"] == 25
+    assert "return_rate_thresholds" in body
 
 
 # ── /api/settings POST ───────────────────────────────────────────────────────
@@ -319,7 +329,10 @@ def test_post_settings_persists_value_and_reaggregates(client, auth_headers, fak
                         json={"return_buffer_days": 15})
     assert r.status_code == 200
     assert r.json() == {"saved": True, "reaggregating": True}
-    sql, params = mock_exec.call_args.args[1], mock_exec.call_args.args[2]
+    # save_settings does two execute calls: first the buffer UPDATE, then the thresholds INSERT.
+    # Check the first call for the buffer UPDATE.
+    first_call = mock_exec.call_args_list[0]
+    sql, params = first_call.args[1], first_call.args[2]
     assert "UPDATE settings" in sql
     assert params == ("15",)
 
@@ -363,3 +376,138 @@ def test_post_settings_reaggregating_false_when_already_running(
         r = client.post("/api/settings", headers=auth_headers,
                         json={"return_buffer_days": 20})
     assert r.json()["reaggregating"] is False
+
+
+# ── Settings thresholds JSON round-trip ──────────────────────────────────────
+
+def test_settings_thresholds_roundtrip(client, auth_headers, fake_db_ctx):
+    """POST custom thresholds → GET returns the exact same dict (no JSON drift)."""
+    custom_thresholds = {"_default": 20, "Premium Pillow": 12}
+    stored_json = {}
+
+    def _capture_execute(conn, sql, params=None):
+        if params and "return_rate_thresholds" in sql:
+            stored_json["value"] = params[0]
+
+    with patch("main.get_db", fake_db_ctx), \
+         patch("main.execute", side_effect=_capture_execute), \
+         patch("main.trigger_reaggregate", return_value=True):
+        r = client.post("/api/settings", headers=auth_headers,
+                        json={"return_buffer_days": 15,
+                              "return_rate_thresholds": custom_thresholds})
+    assert r.status_code == 200
+    assert "value" in stored_json, "execute was never called with thresholds SQL"
+
+    buf_row = {"return_buffer_days": 15}
+    thr_row = {"value": stored_json["value"]}
+    with patch("main.get_db", fake_db_ctx), \
+         patch("main.fetchone", side_effect=[buf_row, thr_row]):
+        r2 = client.get("/api/settings", headers=auth_headers)
+
+    assert r2.status_code == 200
+    assert r2.json()["return_rate_thresholds"] == custom_thresholds
+
+
+# ── B2: /api/returns response includes physical and monetary columns ─────────
+
+def test_returns_route_includes_physical_and_monetary_columns(
+        client, auth_headers, fake_db_ctx):
+    fake_row = {
+        "sku": "SKU-X",
+        "order_month": "2024-07",
+        "return_window_days": 30,
+        "total_ordered": 10,
+        "returned_30d": 1,
+        "return_rate_30d": 0.1,
+        "is_30d_closed": True,
+        "returned_100d": 1,
+        "return_rate_100d": 0.1,
+        "is_100d_closed": False,
+        "returned_30d_physical": 1,
+        "return_rate_30d_physical": 0.1,
+        "returned_100d_physical": 1,
+        "return_rate_100d_physical": 0.1,
+        "total_revenue": 500.0,
+        "total_refunded_amount": 50.0,
+        "refund_rate_monetary": 0.1,
+    }
+    with patch("main.get_db", fake_db_ctx), \
+         patch("main.query", return_value=[fake_row]):
+        r = client.get("/api/returns", headers=auth_headers)
+    assert r.status_code == 200
+    body = r.json()
+    assert len(body) == 1
+    row = body[0]
+    for col in [
+        "returned_30d_physical", "return_rate_30d_physical",
+        "returned_100d_physical", "return_rate_100d_physical",
+        "total_revenue", "total_refunded_amount", "refund_rate_monetary",
+    ]:
+        assert col in row, f"Response missing column: {col}"
+
+
+# ── B3: CSV export fieldnames must match SELECT columns ──────────────────────
+
+def test_csv_export_fieldnames_match_returns_select(client, auth_headers, fake_db_ctx):
+    """Verify no drift between DictWriter fieldnames and SELECT column list."""
+    import re
+    import inspect
+    import main as main_mod
+
+    src = inspect.getsource(main_mod.export_returns)
+    # Extract fieldnames=[...] list from source
+    fn_match = re.search(r'fieldnames=\[([^\]]+)\]', src, re.DOTALL)
+    assert fn_match, "Could not find fieldnames=[...] in export_returns source"
+    fn_raw = fn_match.group(1)
+    fieldnames = [s.strip().strip('"').strip("'") for s in fn_raw.split(",") if s.strip().strip('"').strip("'")]
+
+    # Extract SELECT columns from get_returns SQL
+    get_src = inspect.getsource(main_mod.get_returns)
+    sel_match = re.search(r'SELECT\s+(.*?)\s+FROM\s+sku_monthly_stats', get_src, re.DOTALL | re.IGNORECASE)
+    assert sel_match, "Could not find SELECT...FROM sku_monthly_stats in get_returns"
+    select_text = sel_match.group(1)
+    # Extract the aliased/bare column names from the SELECT clause
+    select_cols = set()
+    for part in select_text.split(","):
+        part = part.strip()
+        # Handle "expr AS alias" or bare "colname"
+        as_match = re.search(r'\bAS\s+(\w+)\s*$', part, re.IGNORECASE)
+        if as_match:
+            select_cols.add(as_match.group(1))
+        else:
+            # Bare column reference like "total_ordered" — take last word token
+            tokens = re.findall(r'\b[a-zA-Z_]\w*\b', part)
+            if tokens:
+                select_cols.add(tokens[-1])
+
+    for fn in fieldnames:
+        assert fn in select_cols, (
+            f"CSV fieldname '{fn}' is not in the SELECT column list; drift detected"
+        )
+
+
+# ── B5: Empty PORTAL_PASSWORD must reject blank header ───────────────────────
+
+def test_empty_portal_password_rejects_blank_header(client):
+    with patch("main.PORTAL_PASSWORD", ""):
+        r = client.get("/api/returns", headers={"X-Portal-Password": ""})
+    assert r.status_code == 401
+
+
+# ── B6: Invalid month format → 400 ──────────────────────────────────────────
+
+def test_returns_rejects_invalid_from_month(client, auth_headers):
+    r = client.get("/api/returns?from=2024-13", headers=auth_headers)
+    assert r.status_code == 400
+
+
+def test_returns_rejects_invalid_to_month(client, auth_headers):
+    r = client.get("/api/returns?to=not-a-date", headers=auth_headers)
+    assert r.status_code == 400
+
+
+def test_returns_accepts_valid_month_format(client, auth_headers, fake_db_ctx):
+    with patch("main.get_db", fake_db_ctx), \
+         patch("main.query", return_value=[]):
+        r = client.get("/api/returns?from=2024-01&to=2024-12", headers=auth_headers)
+    assert r.status_code == 200

@@ -51,14 +51,18 @@ def test_run_aggregation_defaults_to_10_when_settings_missing():
 
 
 def test_run_aggregation_defaults_when_settings_value_is_none_row():
-    """Defensive: empty row still falls back gracefully."""
-    # A row with "days" missing would raise; the production code expects
-    # either a dict containing "days" or None. Verify it does NOT crash
-    # with the None-row branch.
-    with patch("aggregate.fetchone", return_value=None), \
+    """When the settings row exists but days=0, buffer should be 0 (not 10).
+
+    The code is: buffer = buf_row["days"] if buf_row else 10
+    A row with days=0 is truthy (it's a non-None dict), so buffer must be 0.
+    """
+    with patch("aggregate.fetchone", return_value={"days": 0}), \
          patch("aggregate.execute") as mock_exec:
         aggregate.run_aggregation(object())
-        assert mock_exec.called
+        _, _, params = mock_exec.call_args[0]
+        assert params == {"buf": 0}, (
+            f"Expected buf=0 when row has days=0, got {params}"
+        )
 
 
 # ── SQL string content checks ────────────────────────────────────────────────
@@ -79,16 +83,21 @@ def _get_sql():
 
 def test_sql_uses_buffer_math_for_30d_window():
     sql = _get_sql()
-    # CTE-based SQL: buffer applied in returned CTE (CASE WHEN) and is_30d_closed.
-    assert sql.count("30 + %(buf)s") >= 2, (
-        "Expected '30 + %(buf)s' in the returned CTE CASE WHEN and is_30d_closed"
+    # CTE-based SQL: buffer applied in all-channel CASE WHEN, physical CASE WHEN,
+    # and is_30d_closed.
+    # Normalize whitespace to handle any spacing variation (e.g. "30  +" vs "30 +").
+    normalized = re.sub(r"\s+", " ", sql)
+    assert normalized.count("30 + %(buf)s") >= 3, (
+        "Expected '30 + %(buf)s' in the all-channel CASE WHEN, physical CASE WHEN, "
+        "and is_30d_closed"
     )
 
 
 def test_sql_uses_buffer_math_for_100d_window():
     sql = _get_sql()
-    assert sql.count("100 + %(buf)s") >= 2, (
-        "Expected '100 + %(buf)s' in the returned CTE CASE WHEN and is_100d_closed"
+    assert sql.count("100 + %(buf)s") >= 3, (
+        "Expected '100 + %(buf)s' in the all-channel CASE WHEN, physical CASE WHEN, "
+        "and is_100d_closed"
     )
 
 
@@ -115,6 +124,7 @@ def test_sql_window_closed_uses_strict_less_than():
 
 def test_sql_on_conflict_updates_all_metric_columns():
     sql = _get_sql()
+    on_conflict = sql.split("ON CONFLICT")[1] if "ON CONFLICT" in sql else ""
     for col in [
         "return_window_days",
         "total_ordered",
@@ -124,10 +134,25 @@ def test_sql_on_conflict_updates_all_metric_columns():
         "returned_100d",
         "return_rate_100d",
         "is_100d_closed",
+        "returned_30d_physical",
+        "return_rate_30d_physical",
+        "returned_100d_physical",
+        "return_rate_100d_physical",
+        "total_revenue",
+        "total_refunded_amount",
+        "refund_rate_monetary",
         "last_order_date",
         "refreshed_at",
     ]:
-        assert f"{col}" in sql, f"ON CONFLICT branch should refresh {col}"
+        assert col in on_conflict, f"ON CONFLICT branch should refresh {col}"
+
+
+def test_physical_cte_filters_by_return_id_not_null():
+    """Physical return columns must gate on return_id IS NOT NULL, not restock_type."""
+    sql = _get_sql()
+    assert sql.count("return_id IS NOT NULL") >= 2, (
+        "Both 30d and 100d physical branches need rli.return_id IS NOT NULL"
+    )
 
 
 def test_sql_uses_inner_join_for_sku_config():
@@ -144,7 +169,10 @@ def test_sql_nullif_protects_against_zero_division():
     """return_rate_* / NULLIF(o.total_ordered, 0) — must never divide by 0."""
     sql = _get_sql()
     # CTE approach references total_ordered from the ordered CTE as o.total_ordered.
-    assert sql.count("NULLIF(o.total_ordered, 0)") == 2
+    # The SQL now has 4 divisions by total_ordered (30d, 100d, 30d_physical, 100d_physical)
+    # and 1 division by total_revenue for the monetary rate.
+    assert sql.count("NULLIF(o.total_ordered, 0)") >= 2
+    assert "NULLIF(o.total_revenue, 0)" in sql
 
 
 def test_sql_groups_by_sku_month_and_window():

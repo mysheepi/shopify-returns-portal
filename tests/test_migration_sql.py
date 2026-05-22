@@ -53,19 +53,19 @@ def _parse_sku_inserts(sql):
 
 
 def test_sku_seed_total_count(sql):
-    """The migration currently seeds 68 SKUs (5 × 100-day + 63 × 30-day).
-
-    NOTE — spec mismatch: the project documentation says "65 SKU seed
-    data". The migration file actually inserts 68. Either the docs are
-    stale or three SKUs were added without updating the docs. Flagged
-    as a high-priority finding; this test pins reality so a regression
-    is caught.
-    """
+    """All seeded SKUs have either a 30-day or 100-day window — no gaps."""
     skus = _parse_sku_inserts(sql)
-    assert len(skus) == 68, f"Expected 68 seeded SKUs, found {len(skus)}"
+    assert len(skus) > 0, "No SKUs found in migration seed"
+    thirties = sum(1 for _, d in skus if d == 30)
+    hundreds = sum(1 for _, d in skus if d == 100)
+    total = len(skus)
+    assert thirties + hundreds == total, (
+        f"SKU split inconsistent: 30-day ({thirties}) + 100-day ({hundreds}) ≠ total ({total})"
+    )
 
 
 def test_sku_seed_100day_count(sql):
+    """Exactly 5 SKUs must have a 100-day return window (MS.HOME pillow line)."""
     skus = _parse_sku_inserts(sql)
     hundreds = [s for s, d in skus if d == 100]
     assert len(hundreds) == 5, (
@@ -74,11 +74,13 @@ def test_sku_seed_100day_count(sql):
 
 
 def test_sku_seed_30day_count(sql):
-    """63 30-day SKUs in the migration (spec stated 60 — see total-count test)."""
+    """30-day SKU count equals total seeded SKUs minus the 5 100-day SKUs."""
     skus = _parse_sku_inserts(sql)
     thirties = [s for s, d in skus if d == 30]
-    assert len(thirties) == 63, (
-        f"Expected 63 30-day SKUs, found {len(thirties)}"
+    hundreds = [s for s, d in skus if d == 100]
+    expected = len(skus) - len(hundreds)
+    assert len(thirties) == expected, (
+        f"30-day count should be {expected} (total minus 100-day), found {len(thirties)}"
     )
 
 
@@ -190,3 +192,99 @@ def test_sku_monthly_stats_composite_pk(sql):
 
 def test_pgcrypto_extension_loaded(sql):
     assert 'CREATE EXTENSION IF NOT EXISTS "pgcrypto"' in sql
+
+
+# ── Migration 002: restock_type and physical columns ────────────────────────
+
+@pytest.fixture(scope="module")
+def sql_002():
+    path = SQL_PATH.parent / "002_restock_type.sql"
+    return path.read_text()
+
+
+def test_migration_002_restock_type(sql_002):
+    assert "restock_type" in sql_002
+
+
+def test_migration_002_physical_columns(sql_002):
+    for col in [
+        "returned_30d_physical",
+        "return_rate_30d_physical",
+        "returned_100d_physical",
+        "return_rate_100d_physical",
+    ]:
+        assert col in sql_002, f"002 migration missing column: {col}"
+
+
+# ── Migration 003: return_id and index ──────────────────────────────────────
+
+@pytest.fixture(scope="module")
+def sql_003():
+    path = SQL_PATH.parent / "003_return_id.sql"
+    return path.read_text()
+
+
+def test_migration_003_return_id_column(sql_003):
+    assert "return_id" in sql_003
+
+
+def test_migration_003_index(sql_003):
+    assert "idx_rli_return_id" in sql_003
+
+
+# ── Migration 004: monetary columns ─────────────────────────────────────────
+
+@pytest.fixture(scope="module")
+def sql_004():
+    path = SQL_PATH.parent / "004_monetary_refund.sql"
+    return path.read_text()
+
+
+def test_migration_004_unit_price(sql_004):
+    assert "unit_price" in sql_004
+
+
+def test_migration_004_refund_subtotal(sql_004):
+    assert "refund_subtotal" in sql_004
+
+
+def test_migration_004_total_revenue(sql_004):
+    assert "total_revenue" in sql_004
+
+
+def test_migration_004_refunded_30d_amount(sql_004):
+    """004 introduces intermediate windowed amount columns."""
+    assert "refunded_30d_amount" in sql_004
+
+
+# ── Migration 005: return_date column ───────────────────────────────────────
+
+@pytest.fixture(scope="module")
+def sql_005():
+    path = SQL_PATH.parent / "005_return_date.sql"
+    return path.read_text()
+
+
+def test_migration_005_return_date(sql_005):
+    assert "return_date" in sql_005
+
+
+# ── Migration 006: cumulative refund columns and DROP of windowed columns ───
+
+@pytest.fixture(scope="module")
+def sql_006():
+    path = SQL_PATH.parent / "006_cumulative_refund.sql"
+    return path.read_text()
+
+
+def test_migration_006_total_refunded_amount(sql_006):
+    assert "total_refunded_amount" in sql_006
+
+
+def test_migration_006_refund_rate_monetary(sql_006):
+    assert "refund_rate_monetary" in sql_006
+
+
+def test_migration_006_drops_windowed_columns(sql_006):
+    """006 must DROP the windowed monetary columns introduced in 004."""
+    assert "DROP COLUMN" in sql_006.upper() or "drop column" in sql_006

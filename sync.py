@@ -87,6 +87,23 @@ def _parse_next_cursor(link_header):
 
 # ── Order upsert ─────────────────────────────────────────────────────────────
 
+def _fetch_return_dates(order_id, return_ids):
+    """One API call per order: return {return_id: date_customer_registered_return}."""
+    if not return_ids:
+        return {}
+    url = f"https://{SHOPIFY_STORE}.myshopify.com/admin/api/{API_VERSION}/orders/{order_id}/returns.json"
+    try:
+        resp = _fetch_page(url, {"limit": 250})
+        result = {}
+        for ret in resp.json().get("returns", []):
+            rid = ret.get("id")
+            if rid in return_ids and ret.get("created_at"):
+                result[rid] = parse_dt(ret["created_at"]).date()
+        return result
+    except Exception:
+        return {}
+
+
 def _upsert_order(conn, order):
     order_date     = parse_dt(order["created_at"]).date()
     updated_at_raw = order.get("updated_at", order["created_at"])
@@ -115,20 +132,34 @@ def _upsert_order(conn, order):
         if not known:
             continue
 
+        unit_price = float(item.get("price") or 0)
         db_row = fetchone(conn, """
             INSERT INTO order_line_items
-                (shopify_line_item_id, order_id, sku, quantity, order_date)
-            VALUES (%s, %s, %s, %s, %s)
+                (shopify_line_item_id, order_id, sku, quantity, order_date, unit_price)
+            VALUES (%s, %s, %s, %s, %s, %s)
             ON CONFLICT (shopify_line_item_id) DO UPDATE
-                SET quantity = EXCLUDED.quantity
+                SET quantity   = EXCLUDED.quantity,
+                    unit_price = EXCLUDED.unit_price
             RETURNING id
-        """, (item["id"], order_db_id, sku, item["quantity"], order_date))
+        """, (item["id"], order_db_id, sku, item["quantity"], order_date, unit_price))
         line_item_map[item["id"]] = db_row["id"]
+
+    # Pre-collect all return_ids so we can fetch their registration dates in one API call.
+    all_return_ids = set()
+    for refund in order.get("refunds", []):
+        rid = (refund.get("return") or {}).get("id")
+        if rid:
+            all_return_ids.add(rid)
+    return_date_lookup = _fetch_return_dates(order["id"], all_return_ids)
 
     # Upsert refunds
     refund_count = 0
     for refund in order.get("refunds", []):
         refund_date = parse_dt(refund["created_at"]).date()
+        # return_id is set only when the merchant created a Shopify return (DHL label issued).
+        # NULL means standalone refund (goodwill / partial discount — customer keeps the item).
+        return_obj  = refund.get("return") or {}
+        return_id   = return_obj.get("id")  # BIGINT or None
 
         for rli in refund.get("refund_line_items", []):
             line_item_obj = rli.get("line_item") or {}
@@ -155,23 +186,34 @@ def _upsert_order(conn, order):
             if qty <= 0:
                 continue
 
-            days = max(0, (refund_date - order_date).days)
+            # For physical returns: days counted from when customer registered the return.
+            # For goodwill refunds (no return object): days counted from when refund was issued.
+            return_date = return_date_lookup.get(return_id) if return_id else None
+            days = max(0, ((return_date or refund_date) - order_date).days)
+            restock_type     = rli.get("restock_type") or "return"
+            refund_subtotal  = float(rli.get("subtotal") or 0)
 
             execute(conn, """
                 INSERT INTO refund_line_items (
                     shopify_refund_id, shopify_refund_line_item_id,
                     order_line_item_id, sku, qty_returned,
-                    order_date, refund_date, days_to_refund
+                    order_date, refund_date, return_date, days_to_refund,
+                    restock_type, return_id, refund_subtotal
                 )
-                VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
+                VALUES (%s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s, %s)
                 ON CONFLICT (shopify_refund_line_item_id) DO UPDATE
-                    SET qty_returned   = EXCLUDED.qty_returned,
-                        refund_date    = EXCLUDED.refund_date,
-                        days_to_refund = EXCLUDED.days_to_refund
+                    SET qty_returned    = EXCLUDED.qty_returned,
+                        refund_date     = EXCLUDED.refund_date,
+                        return_date     = EXCLUDED.return_date,
+                        days_to_refund  = EXCLUDED.days_to_refund,
+                        restock_type    = EXCLUDED.restock_type,
+                        return_id       = EXCLUDED.return_id,
+                        refund_subtotal = EXCLUDED.refund_subtotal
             """, (
                 refund["id"], rli["id"],
                 db_li_id, sku, qty,
-                order_date, refund_date, days,
+                order_date, refund_date, return_date, days,
+                restock_type, return_id, refund_subtotal,
             ))
             refund_count += 1
 
