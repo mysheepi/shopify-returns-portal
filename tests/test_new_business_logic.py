@@ -372,7 +372,7 @@ class TestPriceCapture:
         return li_params
 
     def test_unit_price_captured_from_price_field(self):
-        """params[5] of order_line_items INSERT = unit_price = float(item['price'])."""
+        """No discount: unit_price = price (formula reduces to price × qty / qty)."""
         order = {
             "id": 3001,
             "created_at": "2024-03-01T00:00:00Z",
@@ -386,6 +386,25 @@ class TestPriceCapture:
         assert len(li_params) == 1
         # (shopify_line_item_id, order_id, sku, quantity, order_date, unit_price)
         assert li_params[0][5] == 49.99
+
+    def test_unit_price_accounts_for_discount(self):
+        """15% discount: unit_price = (price × qty − total_discount) / qty."""
+        order = {
+            "id": 3006,
+            "created_at": "2024-03-01T00:00:00Z",
+            "line_items": [
+                {"id": 6006, "sku": "SKU-A", "quantity": 2,
+                 "fulfillment_status": "fulfilled",
+                 "price": "120.00", "total_discount": "36.00"},
+            ],
+            "refunds": [],
+        }
+        li_params = self._get_li_insert_params(order)
+        assert len(li_params) == 1
+        # (120 × 2 − 36) / 2 = 102.00
+        assert li_params[0][5] == 102.00, (
+            f"unit_price should be post-discount effective price, got {li_params[0][5]}"
+        )
 
     def test_unit_price_defaults_to_zero_when_price_missing(self):
         """Missing price field → float(None or 0) = 0.0."""
@@ -416,14 +435,14 @@ class TestPriceCapture:
         li_params = self._get_li_insert_params(order)
         assert li_params[0][5] == 0.0
 
-    def test_refund_subtotal_captured(self):
-        """params[11] of refund_line_items INSERT = refund_subtotal."""
+    def test_refund_subtotal_includes_total_tax(self):
+        """params[11] = subtotal + total_tax (tax-inclusive, consistent with unit_price)."""
         order = {
             "id": 3004,
             "created_at": "2024-03-01T00:00:00Z",
             "line_items": [
                 {"id": 6004, "sku": "SKU-A", "quantity": 2,
-                 "fulfillment_status": "fulfilled", "price": "39.99"},
+                 "fulfillment_status": "fulfilled", "price": "120.00"},
             ],
             "refunds": [
                 {
@@ -431,7 +450,7 @@ class TestPriceCapture:
                     "created_at": "2024-03-15T00:00:00Z",
                     "refund_line_items": [
                         {"id": 7010, "line_item_id": 6004, "quantity": 1,
-                         "subtotal": "39.99",
+                         "subtotal": "100.00", "total_tax": "20.00",
                          "line_item": {"sku": "SKU-A", "fulfillment_status": "fulfilled"}},
                     ],
                 },
@@ -446,10 +465,12 @@ class TestPriceCapture:
 
         refund_inserts = [p for sql, p in executed if "refund_line_items" in sql]
         assert len(refund_inserts) == 1
-        assert refund_inserts[0][11] == 39.99
+        assert refund_inserts[0][11] == 120.00, (
+            "refund_subtotal must be subtotal + total_tax to match tax-inclusive unit_price"
+        )
 
     def test_refund_subtotal_defaults_to_zero_when_none(self):
-        """subtotal=None → 0.0."""
+        """subtotal=None and total_tax=None → 0.0."""
         order = {
             "id": 3005,
             "created_at": "2024-03-01T00:00:00Z",
@@ -463,7 +484,7 @@ class TestPriceCapture:
                     "created_at": "2024-03-10T00:00:00Z",
                     "refund_line_items": [
                         {"id": 7011, "line_item_id": 6005, "quantity": 1,
-                         "subtotal": None,  # missing subtotal
+                         "subtotal": None, "total_tax": None,
                          "line_item": {"sku": "SKU-A", "fulfillment_status": "fulfilled"}},
                     ],
                 },

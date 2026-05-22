@@ -703,10 +703,10 @@ function portal() {
 
       const win30 = { headerName: '30D Window',
         headerGroupComponent: groupHeader(() => `Order Date + 30D + ${this.bufferInput}D buffer`),
-        children: [ Q('returned_30d_physical','Returned Qty'), R('return_rate_30d_physical','Return Rate'), C('is_30d_closed','Window Closed') ] };
+        children: [ Q('returned_30d','Returned Qty'), R('return_rate_30d','Return Rate'), C('is_30d_closed','Window Closed') ] };
       const win100 = { headerName: '100D Window',
         headerGroupComponent: groupHeader(() => `Order Date + 100D + ${this.bufferInput}D buffer`),
-        children: [ Q('returned_100d_physical','Returned Qty'), R('return_rate_100d_physical','Return Rate'), C('is_100d_closed','Window Closed') ] };
+        children: [ Q('returned_100d','Returned Qty'), R('return_rate_100d','Return Rate'), C('is_100d_closed','Window Closed') ] };
       const allRefunds = { headerName: 'All Refunds',
         headerGroupComponent: groupHeader(() => 'All refunds to date (goodwill + physical), monetary'),
         children: [ E('total_refunded_amount','Refunded €'), R('refund_rate_monetary','Refund Rate') ] };
@@ -754,7 +754,7 @@ function portal() {
         if (!map[key]) {
           map[key] = { product_name: prod, order_month: r.order_month,
             total_ordered: 0, total_revenue: 0, total_refunded_amount: 0,
-            returned_30d_physical: 0, returned_100d_physical: 0,
+            returned_30d: 0, returned_100d: 0,
             is_30d_closed: true, is_100d_closed: true,
             return_window_days: r.return_window_days };
         }
@@ -762,16 +762,16 @@ function portal() {
         g.total_ordered            += r.total_ordered            || 0;
         g.total_revenue            += r.total_revenue            || 0;
         g.total_refunded_amount    += r.total_refunded_amount    || 0;
-        g.returned_30d_physical    += r.returned_30d_physical    || 0;
-        g.returned_100d_physical   += r.returned_100d_physical   || 0;
+        g.returned_30d             += r.returned_30d             || 0;
+        g.returned_100d            += r.returned_100d            || 0;
         g.is_30d_closed             = g.is_30d_closed  && !!r.is_30d_closed;
         g.is_100d_closed            = g.is_100d_closed && !!r.is_100d_closed;
         if (g.return_window_days !== r.return_window_days) g.return_window_days = null;
       }
       return Object.values(map).map(g => ({
         ...g,
-        return_rate_30d_physical:  g.total_ordered ? g.returned_30d_physical  / g.total_ordered : null,
-        return_rate_100d_physical: g.total_ordered ? g.returned_100d_physical / g.total_ordered : null,
+        return_rate_30d:  g.total_ordered ? g.returned_30d  / g.total_ordered : null,
+        return_rate_100d: g.total_ordered ? g.returned_100d / g.total_ordered : null,
         refund_rate_monetary:      g.total_revenue ? g.total_refunded_amount  / g.total_revenue  : null,
       }));
     },
@@ -906,8 +906,8 @@ function portal() {
         const seriesRows = displayRows.filter(r => r[groupKey] === key);
         const byMonth = Object.fromEntries(seriesRows.map(r => [r.order_month, r]));
 
-        const rate30Field  = 'return_rate_30d_physical';
-        const rate100Field = 'return_rate_100d_physical';
+        const rate30Field  = 'return_rate_30d';
+        const rate100Field = 'return_rate_100d';
         datasets.push({
           label: `${key} (30d)`,
           data: months.map(m => byMonth[m] ? (byMonth[m][rate30Field] * 100).toFixed(2) : null),

@@ -132,7 +132,10 @@ def _upsert_order(conn, order):
         if not known:
             continue
 
-        unit_price = float(item.get("price") or 0)
+        qty        = item["quantity"]
+        price      = float(item.get("price") or 0)
+        discount   = float(item.get("total_discount") or 0)
+        unit_price = (price * qty - discount) / qty if qty > 0 else 0
         db_row = fetchone(conn, """
             INSERT INTO order_line_items
                 (shopify_line_item_id, order_id, sku, quantity, order_date, unit_price)
@@ -141,7 +144,7 @@ def _upsert_order(conn, order):
                 SET quantity   = EXCLUDED.quantity,
                     unit_price = EXCLUDED.unit_price
             RETURNING id
-        """, (item["id"], order_db_id, sku, item["quantity"], order_date, unit_price))
+        """, (item["id"], order_db_id, sku, qty, order_date, unit_price))
         line_item_map[item["id"]] = db_row["id"]
 
     # Pre-collect all return_ids so we can fetch their registration dates in one API call.
@@ -191,7 +194,7 @@ def _upsert_order(conn, order):
             return_date = return_date_lookup.get(return_id) if return_id else None
             days = max(0, ((return_date or refund_date) - order_date).days)
             restock_type     = rli.get("restock_type") or "return"
-            refund_subtotal  = float(rli.get("subtotal") or 0)
+            refund_subtotal  = float(rli.get("subtotal") or 0) + float(rli.get("total_tax") or 0)
 
             execute(conn, """
                 INSERT INTO refund_line_items (
