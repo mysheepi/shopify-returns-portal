@@ -165,6 +165,18 @@
   .settings-row input:focus { border-color: var(--accent); }
   .settings-hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
   .settings-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
+  .docs-card {
+    background: var(--surface); border-radius: 12px; padding: 32px;
+    width: 680px; max-height: 90vh; overflow-y: auto;
+    box-shadow: 0 8px 40px rgba(0,0,0,.15);
+  }
+  .docs-card h2 { font-size: 17px; font-weight: 700; margin-bottom: 16px; }
+  .docs-group { margin-bottom: 24px; }
+  .docs-group-title { font-size: 11px; font-weight: 700; letter-spacing: .06em; color: var(--accent); text-transform: uppercase; margin-bottom: 8px; }
+  .docs-row { display: flex; gap: 12px; padding: 8px 0; border-bottom: 1px solid var(--border); font-size: 13px; }
+  .docs-row:last-child { border-bottom: none; }
+  .docs-col-name { font-weight: 600; min-width: 140px; color: var(--text); }
+  .docs-col-desc { color: var(--muted); line-height: 1.5; }
 
   /* ── Empty / loading states ── */
   .state-box {
@@ -213,6 +225,11 @@
               @click="triggerSync()" :disabled="syncRunning">
         <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><path d="M21 2v6h-6"/><path d="M3 12a9 9 0 0 1 15-6.7L21 8"/><path d="M3 22v-6h6"/><path d="M21 12a9 9 0 0 1-15 6.7L3 16"/></svg>
         Sync
+      </button>
+      <button class="btn btn-outline" style="color:#fff;background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3)"
+              @click="showDocs = true">
+        <svg width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5"><circle cx="12" cy="12" r="10"/><path d="M9.09 9a3 3 0 0 1 5.83 1c0 2-3 3-3 3"/><line x1="12" y1="17" x2="12.01" y2="17"/></svg>
+        Docs
       </button>
       <button class="btn btn-outline" style="color:#fff;background:rgba(255,255,255,.15);border-color:rgba(255,255,255,.3)"
               @click="showSettings = true">
@@ -365,6 +382,48 @@
   </div>
 </div>
 
+<div class="settings-overlay" x-show="showDocs" x-cloak @click.self="showDocs=false">
+  <div class="docs-card">
+    <h2>Column Reference</h2>
+
+    <div class="docs-group">
+      <div class="docs-group-title">Row dimensions</div>
+      <div class="docs-row"><span class="docs-col-name">SKU</span><span class="docs-col-desc">Shopify variant SKU code.</span></div>
+      <div class="docs-row"><span class="docs-col-name">Product</span><span class="docs-col-desc">Product family derived from SKU prefix (e.g. all MS.HP.* → Home Pillow).</span></div>
+      <div class="docs-row"><span class="docs-col-name">Month</span><span class="docs-col-desc">Calendar month the order was placed (YYYY-MM). Filters and comparisons are always based on order month, not refund month.</span></div>
+      <div class="docs-row"><span class="docs-col-name">Trial</span><span class="docs-col-desc">Contractual return window for this SKU: 30 days (standard) or 100 days (Home Pillow line).</span></div>
+    </div>
+
+    <div class="docs-group">
+      <div class="docs-group-title">Order volume</div>
+      <div class="docs-row"><span class="docs-col-name">Ordered Qty</span><span class="docs-col-desc">Total units fulfilled for this SKU in this order month. Only fulfilled line items are counted — cancelled or pending items are excluded.</span></div>
+    </div>
+
+    <div class="docs-group">
+      <div class="docs-group-title">30D Window &amp; 100D Window</div>
+      <div class="docs-row"><span class="docs-col-name">Returned Qty</span><span class="docs-col-desc">Units where the refund (or return registration) happened within the window + buffer days from order date. Includes both DHL physical returns and goodwill refunds (customer keeps the item but is refunded). Formula: <em>days from order date to earliest of return registration date or refund date ≤ window + buffer.</em></span></div>
+      <div class="docs-row"><span class="docs-col-name">Return Rate</span><span class="docs-col-desc">Returned Qty ÷ Ordered Qty for this window. Red highlight when it exceeds the per-product threshold set in Settings.</span></div>
+      <div class="docs-row"><span class="docs-col-name">Window Closed</span><span class="docs-col-desc">✓ when every order in this month has passed the window + buffer cutoff — meaning the rate is final and no more returns can qualify. ✗ means the window is still open and the rate may increase.</span></div>
+    </div>
+
+    <div class="docs-group">
+      <div class="docs-group-title">All Refunds (monetary)</div>
+      <div class="docs-row"><span class="docs-col-name">Revenue €</span><span class="docs-col-desc">Total tax-inclusive revenue for this SKU × month after applied discounts. Used as the denominator for Refund Rate. Shipping fees are excluded.</span></div>
+      <div class="docs-row"><span class="docs-col-name">Refunded €</span><span class="docs-col-desc">Total amount refunded to customers to date, tax-inclusive, regardless of when the refund was issued. Covers both physical returns and goodwill refunds. Shipping refunds are excluded.</span></div>
+      <div class="docs-row"><span class="docs-col-name">Refund Rate</span><span class="docs-col-desc">Refunded € ÷ Revenue €. Monetary return rate — comparable across SKUs at different price points and across months with different volumes.</span></div>
+    </div>
+
+    <div class="docs-group">
+      <div class="docs-group-title">Return Buffer (Settings)</div>
+      <div class="docs-row"><span class="docs-col-name">Buffer days</span><span class="docs-col-desc">Extra days added to each window to account for return shipping transit and internal refund processing time. Affects Returned Qty, Return Rate, and Window Closed for both windows. Default: 10 days.</span></div>
+    </div>
+
+    <div style="display:flex;justify-content:flex-end;margin-top:8px">
+      <button class="btn btn-outline" @click="showDocs=false">Close</button>
+    </div>
+  </div>
+</div>
+
 <script>
 // ── Palette for chart lines ─────────────────────────────────────────────────
 const PALETTE = [
@@ -480,6 +539,7 @@ function portal() {
 
     // Settings
     showSettings: false,
+    showDocs: false,
     bufferInput: 10,
     thresholdPct: { '_default': 15 },
     productList: [...new Set(Object.values(SKU_PRODUCT))].sort(),
@@ -638,7 +698,7 @@ function portal() {
       const currRenderer = params => {
         if (params.value === null || params.value === undefined) return '—';
         if (params.value === 0) return '<span style="color:#94a3b8">€0</span>';
-        return '€' + Number(params.value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return '€' + Number(params.value).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
       };
 
       const columnDefs = this.buildColumnDefs(closedRenderer, pctRenderer, qtyRenderer, currRenderer, groupHeader);
@@ -815,7 +875,7 @@ function portal() {
       const currRenderer = params => {
         if (params.value === null || params.value === undefined) return '—';
         if (params.value === 0) return '<span style="color:#94a3b8">€0</span>';
-        return '€' + Number(params.value).toLocaleString('en-US', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+        return '€' + Number(params.value).toLocaleString('en-US', { minimumFractionDigits: 0, maximumFractionDigits: 0 });
       };
       const groupHeader = (getTooltip) => class {
         init(p) {
