@@ -323,23 +323,25 @@
     <p>Changes are applied to all historical data immediately after saving.</p>
 
     <div class="settings-row">
-      <label>RETURN BUFFER (DAYS)</label>
+      <label>SHIPPING BUFFER (DAYS)</label>
       <input type="number" x-model.number="bufferInput" min="0" max="60">
       <span class="settings-hint">
-        Added to each return window to account for delivery and refund processing time.
-        Effective windows: <strong x-text="30 + bufferInput"></strong>d (30-day SKUs)
-        and <strong x-text="100 + bufferInput"></strong>d (100-day SKUs).
+        Estimated days between order placement and delivery. The 30-day and 100-day return trials
+        start from when the customer receives the order, not the order date. This buffer is added
+        to the order date to approximate the delivery date.
+        Effective cutoff from order date: <strong x-text="30 + bufferInput"></strong>d (30-day trial)
+        and <strong x-text="100 + bufferInput"></strong>d (100-day trial).
       </span>
     </div>
 
     <div class="settings-row">
-      <label>DEFAULT REFUND RATE THRESHOLD (%)</label>
+      <label>DEFAULT RETURN RATE THRESHOLD (%)</label>
       <input type="number" x-model.number="thresholdPct['_default']" min="0" max="100" step="0.1">
-      <span class="settings-hint">Refund rate cells above this value are highlighted red. Applied to all products unless overridden below.</span>
+      <span class="settings-hint">Return rate cells above this value are highlighted red. Applied to all products unless overridden below.</span>
     </div>
 
     <div class="settings-row" style="margin-bottom:8px">
-      <label>PER-PRODUCT THRESHOLD OVERRIDES (%)</label>
+      <label>PER-PRODUCT RETURN RATE OVERRIDES (%)</label>
       <div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:7px">
         <template x-for="product in productList" :key="product">
           <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;border-bottom:1px solid var(--border)">
