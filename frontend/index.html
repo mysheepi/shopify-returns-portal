@@ -1133,8 +1133,8 @@ function portal() {
         };
         const HEADER_FONT = '600 12px Inter, system-ui, sans-serif';
         const CELL_FONT   = '14px Inter, system-ui, sans-serif';
-        const HEADER_PAD  = 28;
-        const CELL_PAD    = 32;
+        const HEADER_PAD  = 52; // AG Grid header: 12px left + 12px right + sort-arrow space
+        const CELL_PAD    = 48; // AG Grid cell: 12px left + 12px right + overflow buffer
 
         const cols = this.gridApi.getColumns() || [];
         const contentWidths = new Map();
@@ -1177,11 +1177,21 @@ function portal() {
           [...contentWidths.entries()].map(([key, newWidth]) => ({ key, newWidth }))
         );
 
-        // Expand columns to fill the grid — columnLimits prevents sizeColumnsToFit
-        // from compressing any column below its content-measured width
-        this.gridApi.sizeColumnsToFit({
-          columnLimits: [...contentWidths.entries()].map(([key, minWidth]) => ({ key, minWidth })),
-        });
+        // Distribute any leftover grid space proportionally — only expands, never compresses
+        const totalContent = [...contentWidths.values()].reduce((a, b) => a + b, 0);
+        const viewport = document.querySelector('.ag-body-viewport');
+        const gridWidth = viewport ? viewport.clientWidth : 0;
+        if (gridWidth > 0 && totalContent < gridWidth) {
+          const extra = gridWidth - totalContent;
+          const nonPinned = cols.filter(col => !col.isPinned());
+          const npTotal   = nonPinned.reduce((s, c) => s + (contentWidths.get(c.getColId()) || 0), 0);
+          if (npTotal > 0) {
+            this.gridApi.setColumnWidths(nonPinned.map(col => {
+              const cw = contentWidths.get(col.getColId()) || 0;
+              return { key: col.getColId(), newWidth: Math.round(cw + (cw / npTotal) * extra) };
+            }));
+          }
+        }
       };
 
       if (delay > 0) {
