@@ -404,7 +404,7 @@
     <div class="docs-group">
       <div class="docs-group-title">30D Window &amp; 100D Window</div>
       <div class="docs-row"><span class="docs-col-name">Returned Qty</span><span class="docs-col-desc">Units where a formal return was registered by the customer within the window. Only physical returns (DHL label issued via Shopify) are counted — goodwill refunds where the customer keeps the item are excluded. Timing is measured from order date + buffer days (estimated delivery date).</span></div>
-      <div class="docs-row"><span class="docs-col-name">Return Rate</span><span class="docs-col-desc">Returned Qty ÷ Ordered Qty for this window. Red highlight when it exceeds the per-product threshold set in Settings.</span></div>
+      <div class="docs-row"><span class="docs-col-name">Return Rate</span><span class="docs-col-desc">Returned Qty ÷ Ordered Qty for this window, grouped by <strong>month of order</strong> (not month of return). This means an October refund for a February order is counted against February's rate. Red highlight when it exceeds the per-product threshold set in Settings.</span></div>
       <div class="docs-row"><span class="docs-col-name">Window Closed</span><span class="docs-col-desc">✓ when every order in this month has passed the return deadline (order date + buffer days for shipping + return window days) — the rate is final and no new returns can qualify. ✗ means some orders are still within their return window and the rate may still rise.</span></div>
     </div>
 
@@ -780,7 +780,7 @@ function portal() {
         return [
           { field: 'sku',          headerName: 'SKU',     pinned: 'left', width: 230, filter: true, sort: 'asc', sortIndex: 1 },
           { field: 'product_name', headerName: 'Product', width: 180,  sort: 'asc', sortIndex: 0 },
-          { field: 'order_month',  headerName: 'Month', sort: 'asc', sortIndex: 2, minWidth: 90,
+          { field: 'order_month',  headerName: 'Month of Order', sort: 'asc', sortIndex: 2, minWidth: 90,
             cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
             headerClass: 'ag-right-aligned-header' },
           trialCol, orderedCol, win30, win100, allRefunds,
@@ -788,7 +788,7 @@ function portal() {
       } else {
         return [
           { field: 'product_name', headerName: 'Product', pinned: 'left', width: 220, filter: true, sort: 'asc', sortIndex: 0 },
-          { field: 'order_month',  headerName: 'Month', sort: 'asc', sortIndex: 1, minWidth: 90,
+          { field: 'order_month',  headerName: 'Month of Order', sort: 'asc', sortIndex: 1, minWidth: 90,
             cellStyle: { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' },
             headerClass: 'ag-right-aligned-header' },
           trialCol, orderedCol, win30, win100, allRefunds,
