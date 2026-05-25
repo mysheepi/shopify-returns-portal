@@ -1133,10 +1133,11 @@ function portal() {
           ctx.font = font;
           return Math.ceil(ctx.measureText(String(text ?? '')).width);
         };
-        const HEADER_FONT = '600 12px Inter, system-ui, sans-serif';
-        const CELL_FONT   = '14px Inter, system-ui, sans-serif';
-        const HEADER_PAD  = 52; // AG Grid header: 12px left + 12px right + sort-arrow space
-        const CELL_PAD    = 48; // AG Grid cell: 12px left + 12px right + overflow buffer
+        const HEADER_FONT      = '600 12px Inter, system-ui, sans-serif';
+        const CELL_FONT        = '14px Inter, system-ui, sans-serif';
+        const HEADER_PAD       = 52; // AG Grid header: 12px left + 12px right + sort-arrow space
+        const HEADER_SORT_EXTRA = 20; // extra room for multi-sort index badge (e.g. "2 ↑")
+        const CELL_PAD         = 48; // AG Grid cell: 12px left + 12px right + overflow buffer
 
         const cols = this.gridApi.getColumns() || [];
         const contentWidths = new Map();
@@ -1146,8 +1147,9 @@ function portal() {
           const field = def.field;
           const hdr   = def.headerName || '';
 
-          // Header text width
-          let w = measure(hdr, HEADER_FONT) + HEADER_PAD;
+          // Header text width — add extra for multi-sort badge ("2 ↑") if column is sorted
+          const sortExtra = col.getSortIndex() != null ? HEADER_SORT_EXTRA : 0;
+          let w = measure(hdr, HEADER_FONT) + HEADER_PAD + sortExtra;
 
           // Cell data width across ALL rows (avoids virtualisation blind spots)
           if (field && rows.length) {
