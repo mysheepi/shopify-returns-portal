@@ -124,6 +124,7 @@ def test_sync_stops_polling_when_done():
 def test_save_settings_posts_correct_body():
     assert "this.api('POST', '/api/settings'" in HTML
     assert "return_buffer_days: this.bufferInput" in HTML
+    assert "return_rate_thresholds: this.thresholdOverridePayload()" in HTML
 
 
 def test_buffer_input_clamped_in_ui():
@@ -145,3 +146,55 @@ def test_chart_destroyed_before_redraw():
 def test_chart_tooltip_handles_null_y():
     """`ctx.parsed.y ?? '—'` — nullish-coalescing for empty months."""
     assert "ctx.parsed.y ?? '—'" in HTML
+
+
+def test_return_window_columns_use_physical_return_metrics():
+    """Displayed return-window quantity/rate should exclude goodwill-only refunds."""
+    for field in [
+        "returned_30d_physical",
+        "return_rate_30d_physical",
+        "returned_100d_physical",
+        "return_rate_100d_physical",
+    ]:
+        assert field in HTML
+    assert "Q('returned_30d_physical','Returned Qty')" in HTML
+    assert "R('return_rate_30d_physical','Return Rate')" in HTML
+    assert "Q('returned_100d_physical','Returned Qty')" in HTML
+    assert "R('return_rate_100d_physical','Return Rate')" in HTML
+
+
+def test_product_rollup_aggregates_physical_return_metrics():
+    assert "returned_30d_physical: 0" in HTML
+    assert "g.returned_30d_physical    += r.returned_30d_physical" in HTML
+    assert "return_rate_30d_physical:  g.total_ordered ? g.returned_30d_physical" in HTML
+
+
+def test_settings_use_sku_threshold_overrides():
+    assert "SKU RETURN RATE THRESHOLDS (%)" in HTML
+    assert "x-for=\"sku in thresholdSkuList\"" in HTML
+    assert "thresholdOverrides[sku]" in HTML
+    assert "autoThresholdFor(sku)" in HTML
+    assert "thresholdOverridePayload()" in HTML
+
+
+def test_thresholds_loaded_as_resolved_values_and_overrides():
+    assert "this.thresholdPct        = s.return_rate_thresholds" in HTML
+    assert "this.thresholdOverrides  = s.return_rate_threshold_overrides" in HTML
+    assert "this.thresholdMeta       = s.return_rate_threshold_sources" in HTML
+
+
+def test_grid_highlighting_uses_row_threshold():
+    assert "const limit = (this.thresholdForRow(params.data) ?? 15) / 100" in HTML
+    assert "threshold_pct: this.thresholdForSku(r.sku)" in HTML
+
+
+def test_product_rollup_weights_sku_thresholds_by_ordered_qty():
+    assert "threshold_weighted_sum: 0, threshold_weight: 0" in HTML
+    assert "g.threshold_weighted_sum   += this.thresholdForSku(r.sku) * ordered" in HTML
+    assert "g.threshold_weight ? g.threshold_weighted_sum / g.threshold_weight" in HTML
+
+
+def test_chart_uses_physical_rates_and_preserves_null_points():
+    assert "const rate30Field  = 'return_rate_30d_physical'" in HTML
+    assert "const rate100Field = 'return_rate_100d_physical'" in HTML
+    assert "row && row[field] != null ? Number((row[field] * 100).toFixed(2)) : null" in HTML

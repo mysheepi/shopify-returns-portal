@@ -2,7 +2,9 @@ import os
 import re
 import time
 import threading
+import logging
 from datetime import datetime, timezone
+from urllib.parse import parse_qs, unquote, urlparse
 from dateutil.parser import parse as parse_dt
 
 import requests
@@ -39,6 +41,22 @@ def _set_status(**kwargs):
         _status.update(kwargs)
 
 
+def _try_mark_running(sync_type=None):
+    with _status_lock:
+        if _status["running"]:
+            return False
+        _status.update(
+            running=True,
+            type=sync_type,
+            orders_synced=0,
+            refunds_synced=0,
+            started_at=datetime.now(timezone.utc).isoformat(),
+            completed_at=None,
+            error=None,
+        )
+        return True
+
+
 # ── Shopify HTTP helpers ─────────────────────────────────────────────────────
 
 def _headers():
@@ -51,7 +69,10 @@ def _fetch_page(url, params, max_retries=3):
             resp = requests.get(url, params=params, headers=_headers(), timeout=30)
 
             if resp.status_code == 429:
-                retry_after = int(resp.headers.get("Retry-After", 4))
+                try:
+                    retry_after = int(resp.headers.get("Retry-After", 4))
+                except (TypeError, ValueError):
+                    retry_after = 4
                 time.sleep(retry_after)
                 continue
 
@@ -60,9 +81,12 @@ def _fetch_page(url, params, max_retries=3):
             # Throttle if nearing rate limit
             rate_header = resp.headers.get("X-Shopify-Shop-Api-Call-Limit", "")
             if rate_header:
-                used, total = map(int, rate_header.split("/"))
-                if total > 0 and used / total > 0.8:
-                    time.sleep(0.5)
+                try:
+                    used, total = map(int, rate_header.split("/"))
+                    if total > 0 and used / total > 0.8:
+                        time.sleep(0.5)
+                except (TypeError, ValueError):
+                    pass
 
             return resp
 
@@ -79,9 +103,14 @@ def _parse_next_cursor(link_header):
         return None
     for part in link_header.split(","):
         if 'rel="next"' in part:
-            m = re.search(r'page_info=([^>&"]+)', part)
-            if m:
-                return m.group(1)
+            url_match = re.search(r'<([^>]+)>', part)
+            url = url_match.group(1) if url_match else part
+            cursor = parse_qs(urlparse(url).query).get("page_info", [None])[0]
+            if cursor:
+                return cursor
+            fallback = re.search(r'page_info=([^>&"]+)', part)
+            if fallback:
+                return unquote(fallback.group(1))
     return None
 
 
@@ -292,33 +321,34 @@ def _fail_sync(sync_id, error_msg):
 
 
 def _run_sync_worker():
-    sync_type, watermark = _determine_sync_type()
-
-    # Resume an interrupted full sync if one exists
-    resume_id, resume_cursor = _resume_cursor()
-
-    if resume_id:
-        sync_id = resume_id
-        # Read from DB — _status resets to 0 on process restart
-        with get_db() as conn:
-            row = fetchone(conn,
-                "SELECT orders_synced, refunds_synced FROM sync_log WHERE id = %s",
-                (resume_id,))
-        orders_done  = row["orders_synced"]  if row else 0
-        refunds_done = row["refunds_synced"] if row else 0
-    else:
-        sync_id      = _create_sync_log(sync_type)
-        orders_done  = 0
-        refunds_done = 0
-
-    _set_status(
-        running=True, type=sync_type,
-        orders_synced=0, refunds_synced=0,
-        started_at=datetime.now(timezone.utc).isoformat(),
-        completed_at=None, error=None,
-    )
-
+    sync_id = None
     try:
+        sync_type, watermark = _determine_sync_type()
+
+        # Resume an interrupted full sync if one exists
+        resume_id, resume_cursor = _resume_cursor()
+
+        if resume_id:
+            sync_id = resume_id
+            # Read from DB — _status resets to 0 on process restart
+            with get_db() as conn:
+                row = fetchone(conn,
+                    "SELECT orders_synced, refunds_synced FROM sync_log WHERE id = %s",
+                    (resume_id,))
+            orders_done  = row["orders_synced"]  if row else 0
+            refunds_done = row["refunds_synced"] if row else 0
+        else:
+            sync_id      = _create_sync_log(sync_type)
+            orders_done  = 0
+            refunds_done = 0
+
+        _set_status(
+            running=True, type=sync_type,
+            orders_synced=orders_done, refunds_synced=refunds_done,
+            started_at=datetime.now(timezone.utc).isoformat(),
+            completed_at=None, error=None,
+        )
+
         if resume_cursor:
             # Resume mid-pagination (full sync only)
             params = {"limit": 250, "page_info": resume_cursor}
@@ -372,17 +402,29 @@ def _run_sync_worker():
         _set_status(running=False, completed_at=datetime.now(timezone.utc).isoformat())
 
     except Exception as exc:
-        _fail_sync(sync_id, exc)
-        _set_status(running=False, error=str(exc))
+        if sync_id is not None:
+            try:
+                _fail_sync(sync_id, exc)
+            except Exception:
+                logging.exception("Failed to mark sync %s as error", sync_id)
+        _set_status(
+            running=False,
+            completed_at=datetime.now(timezone.utc).isoformat(),
+            error=str(exc),
+        )
         raise
 
 
 def trigger_sync():
     """Start sync in background thread. Returns False if already running."""
-    if get_status()["running"]:
+    if not _try_mark_running():
         return False
-    t = threading.Thread(target=_run_sync_worker, daemon=True)
-    t.start()
+    try:
+        t = threading.Thread(target=_run_sync_worker, daemon=True)
+        t.start()
+    except Exception as exc:
+        _set_status(running=False, error=str(exc))
+        raise
     return True
 
 
@@ -399,8 +441,12 @@ def trigger_reaggregate():
         except Exception as exc:
             _set_status(running=False, error=str(exc))
 
-    if get_status()["running"]:
+    if not _try_mark_running("reaggregate"):
         return False
-    t = threading.Thread(target=_worker, daemon=True)
-    t.start()
+    try:
+        t = threading.Thread(target=_worker, daemon=True)
+        t.start()
+    except Exception as exc:
+        _set_status(running=False, error=str(exc))
+        raise
     return True

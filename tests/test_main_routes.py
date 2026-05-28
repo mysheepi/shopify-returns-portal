@@ -169,6 +169,16 @@ def test_returns_filter_strips_whitespace_and_empty(client, auth_headers, fake_d
     assert params == [["SKU-A", "SKU-B"]]
 
 
+def test_returns_ignores_blank_sku_filter(client, auth_headers, fake_db_ctx):
+    with patch("main.get_db", fake_db_ctx), \
+         patch("main.query", return_value=[]) as mock_q:
+        r = client.get("/api/returns?skus=,+,+", headers=auth_headers)
+    assert r.status_code == 200
+    sql, params = mock_q.call_args.args[1], mock_q.call_args.args[2]
+    assert "sku = ANY(%s)" not in sql
+    assert params is None
+
+
 def test_returns_filter_month_range(client, auth_headers, fake_db_ctx):
     with patch("main.get_db", fake_db_ctx), \
          patch("main.query", return_value=[]) as mock_q:
@@ -297,26 +307,75 @@ def test_sync_trigger_returns_409_when_already_running(client, auth_headers):
 
 # ── /api/settings GET ────────────────────────────────────────────────────────
 
+def _auto_threshold_rows():
+    return [
+        {"sku": "SKU-A", "return_window_days": 30,
+         "threshold_pct": 12.5, "months_count": 12},
+        {"sku": "SKU-B", "return_window_days": 100,
+         "threshold_pct": 9.25, "months_count": 8},
+        {"sku": "SKU-C", "return_window_days": 30,
+         "threshold_pct": None, "months_count": 0},
+    ]
+
+
 def test_get_settings_returns_default_when_no_row(client, auth_headers, fake_db_ctx):
     with patch("main.get_db", fake_db_ctx), \
-         patch("main.fetchone", return_value=None):
+         patch("main.fetchone", return_value=None), \
+         patch("main.query", return_value=[]):
         r = client.get("/api/settings", headers=auth_headers)
     assert r.status_code == 200
     body = r.json()
     assert body["return_buffer_days"] == 10
-    assert "return_rate_thresholds" in body
+    assert body["return_rate_thresholds"] == {"_default": 15.0}
+    assert body["return_rate_threshold_overrides"] == {"_default": 15.0}
+    assert "return_rate_threshold_sources" in body
 
 
 def test_get_settings_returns_stored_value(client, auth_headers, fake_db_ctx):
     # fetchone is called twice: first for buffer, then for thresholds.
     buf_row = {"return_buffer_days": 25}
-    thr_row = {"value": '{"_default": 15}'}
+    thr_row = {"value": '{"_default": 15, "SKU-B": 22}'}
     with patch("main.get_db", fake_db_ctx), \
-         patch("main.fetchone", side_effect=[buf_row, thr_row]):
+         patch("main.fetchone", side_effect=[buf_row, thr_row]), \
+         patch("main.query", return_value=_auto_threshold_rows()):
         r = client.get("/api/settings", headers=auth_headers)
     body = r.json()
     assert body["return_buffer_days"] == 25
-    assert "return_rate_thresholds" in body
+    assert body["return_rate_thresholds"]["SKU-A"] == 12.5
+    assert body["return_rate_thresholds"]["SKU-B"] == 22.0
+    assert body["return_rate_thresholds"]["SKU-C"] == 15.0
+    assert body["return_rate_threshold_sources"]["SKU-A"]["source"] == "auto"
+    assert body["return_rate_threshold_sources"]["SKU-B"]["source"] == "override"
+    assert body["return_rate_threshold_sources"]["SKU-C"]["source"] == "default"
+
+
+def test_get_settings_falls_back_when_threshold_json_is_invalid(
+        client, auth_headers, fake_db_ctx):
+    buf_row = {"return_buffer_days": 25}
+    thr_row = {"value": "{not-json"}
+    with patch("main.get_db", fake_db_ctx), \
+         patch("main.fetchone", side_effect=[buf_row, thr_row]), \
+         patch("main.query", return_value=[]):
+        r = client.get("/api/settings", headers=auth_headers)
+    assert r.status_code == 200
+    assert r.json()["return_rate_thresholds"] == {"_default": 15.0}
+
+
+def test_get_settings_auto_threshold_sql_uses_last_12_closed_months(
+        client, auth_headers, fake_db_ctx):
+    with patch("main.get_db", fake_db_ctx), \
+         patch("main.fetchone", side_effect=[{"return_buffer_days": 10}, None]), \
+         patch("main.query", return_value=[]) as mock_query:
+        r = client.get("/api/settings", headers=auth_headers)
+    assert r.status_code == 200
+    sql, params = mock_query.call_args.args[1], mock_query.call_args.args[2]
+    assert "ROW_NUMBER() OVER" in sql
+    assert "rn <= %(months)s" in sql
+    assert params == {"months": 12}
+    assert "return_rate_30d_physical" in sql
+    assert "return_rate_100d_physical" in sql
+    assert "sms.is_30d_closed" in sql
+    assert "sms.is_100d_closed" in sql
 
 
 # ── /api/settings POST ───────────────────────────────────────────────────────
@@ -329,11 +388,12 @@ def test_post_settings_persists_value_and_reaggregates(client, auth_headers, fak
                         json={"return_buffer_days": 15})
     assert r.status_code == 200
     assert r.json() == {"saved": True, "reaggregating": True}
-    # save_settings does two execute calls: first the buffer UPDATE, then the thresholds INSERT.
-    # Check the first call for the buffer UPDATE.
+    # save_settings does two execute calls: first the buffer upsert, then the thresholds upsert.
     first_call = mock_exec.call_args_list[0]
     sql, params = first_call.args[1], first_call.args[2]
-    assert "UPDATE settings" in sql
+    assert "INSERT INTO settings" in sql
+    assert "return_buffer_days" in sql
+    assert "ON CONFLICT" in sql
     assert params == ("15",)
 
 
@@ -368,6 +428,14 @@ def test_post_settings_rejects_non_int(client, auth_headers):
     assert r.status_code == 422
 
 
+def test_post_settings_rejects_invalid_threshold(client, auth_headers, fake_db_ctx):
+    with patch("main.get_db", fake_db_ctx), patch("main.execute"):
+        r = client.post("/api/settings", headers=auth_headers,
+                        json={"return_buffer_days": 10,
+                              "return_rate_thresholds": {"SKU-A": 101}})
+    assert r.status_code == 400
+
+
 def test_post_settings_reaggregating_false_when_already_running(
         client, auth_headers, fake_db_ctx):
     with patch("main.get_db", fake_db_ctx), \
@@ -381,8 +449,8 @@ def test_post_settings_reaggregating_false_when_already_running(
 # ── Settings thresholds JSON round-trip ──────────────────────────────────────
 
 def test_settings_thresholds_roundtrip(client, auth_headers, fake_db_ctx):
-    """POST custom thresholds → GET returns the exact same dict (no JSON drift)."""
-    custom_thresholds = {"_default": 20, "Premium Pillow": 12}
+    """POST custom threshold overrides → GET returns the same override dict."""
+    custom_thresholds = {"_default": 20, "SKU-A": 12}
     stored_json = {}
 
     def _capture_execute(conn, sql, params=None):
@@ -401,11 +469,18 @@ def test_settings_thresholds_roundtrip(client, auth_headers, fake_db_ctx):
     buf_row = {"return_buffer_days": 15}
     thr_row = {"value": stored_json["value"]}
     with patch("main.get_db", fake_db_ctx), \
-         patch("main.fetchone", side_effect=[buf_row, thr_row]):
+         patch("main.fetchone", side_effect=[buf_row, thr_row]), \
+         patch("main.query", return_value=_auto_threshold_rows()):
         r2 = client.get("/api/settings", headers=auth_headers)
 
     assert r2.status_code == 200
-    assert r2.json()["return_rate_thresholds"] == custom_thresholds
+    body = r2.json()
+    assert body["return_rate_threshold_overrides"] == {
+        "_default": 20.0,
+        "SKU-A": 12.0,
+    }
+    assert body["return_rate_thresholds"]["SKU-A"] == 12.0
+    assert body["return_rate_thresholds"]["SKU-B"] == 9.25
 
 
 # ── B2: /api/returns response includes physical and monetary columns ─────────

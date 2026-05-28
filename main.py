@@ -11,12 +11,15 @@ _MONTH_RE = _re.compile(r'^\d{4}-(0[1-9]|1[0-2])$')
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 import io
 import csv
 
 from database import init_db, get_db, query, execute, fetchone
 from sync import trigger_sync, trigger_reaggregate, get_status
+
+DEFAULT_RETURN_RATE_THRESHOLD = 15.0
+THRESHOLD_LOOKBACK_MONTHS = 12
 
 PORTAL_PASSWORD = os.environ.get("PORTAL_PASSWORD", "")
 if not PORTAL_PASSWORD:
@@ -98,8 +101,9 @@ def get_returns(
 
     if skus:
         sku_list = [s.strip() for s in skus.split(",") if s.strip()]
-        conditions.append(f"sku = ANY(%s)")
-        params.append(sku_list)
+        if sku_list:
+            conditions.append("sku = ANY(%s)")
+            params.append(sku_list)
 
     if from_month:
         conditions.append("order_month >= DATE_TRUNC('month', %s::DATE)")
@@ -213,7 +217,138 @@ def sync_trigger(
 
 class SettingsPayload(BaseModel):
     return_buffer_days: int
-    return_rate_thresholds: dict = {}
+    return_rate_thresholds: dict = Field(default_factory=dict)
+
+
+def _coerce_threshold(value):
+    threshold = float(value)
+    if threshold < 0 or threshold > 100:
+        raise ValueError("threshold out of range")
+    return threshold
+
+
+def _load_threshold_overrides(raw_value):
+    try:
+        loaded = json.loads(raw_value) if raw_value else {}
+    except (TypeError, json.JSONDecodeError):
+        loaded = {}
+
+    if not isinstance(loaded, dict):
+        loaded = {}
+
+    overrides = {}
+    for key, value in loaded.items():
+        try:
+            overrides[str(key)] = _coerce_threshold(value)
+        except (TypeError, ValueError):
+            continue
+
+    overrides.setdefault("_default", DEFAULT_RETURN_RATE_THRESHOLD)
+    return overrides
+
+
+def _validate_threshold_overrides(payload):
+    overrides = {}
+    for key, value in payload.items():
+        if value in (None, ""):
+            continue
+        try:
+            overrides[str(key)] = _coerce_threshold(value)
+        except (TypeError, ValueError):
+            raise HTTPException(status_code=400, detail="Thresholds must be between 0 and 100")
+
+    overrides.setdefault("_default", DEFAULT_RETURN_RATE_THRESHOLD)
+    return overrides
+
+
+def _threshold_sql():
+    return """
+        WITH eligible_stats AS (
+            SELECT
+                sms.sku,
+                CASE
+                    WHEN sc.return_window_days = 100 THEN sms.return_rate_100d_physical
+                    ELSE sms.return_rate_30d_physical
+                END AS return_rate,
+                ROW_NUMBER() OVER (
+                    PARTITION BY sms.sku
+                    ORDER BY sms.order_month DESC
+                ) AS rn
+            FROM sku_monthly_stats sms
+            JOIN sku_config sc ON sc.sku = sms.sku
+            WHERE (
+                    sc.return_window_days = 100
+                    AND sms.is_100d_closed
+                    AND sms.return_rate_100d_physical IS NOT NULL
+                )
+                OR (
+                    sc.return_window_days <> 100
+                    AND sms.is_30d_closed
+                    AND sms.return_rate_30d_physical IS NOT NULL
+                )
+        ),
+        trailing_thresholds AS (
+            SELECT
+                sku,
+                AVG(return_rate) * 100 AS threshold_pct,
+                COUNT(*) AS months_count
+            FROM eligible_stats
+            WHERE rn <= %(months)s
+            GROUP BY sku
+        )
+        SELECT
+            sc.sku,
+            sc.return_window_days,
+            tt.threshold_pct,
+            COALESCE(tt.months_count, 0) AS months_count
+        FROM sku_config sc
+        LEFT JOIN trailing_thresholds tt ON tt.sku = sc.sku
+        ORDER BY sc.sku
+    """
+
+
+def _resolved_thresholds(conn, overrides):
+    default_threshold = overrides.get("_default", DEFAULT_RETURN_RATE_THRESHOLD)
+    rows = query(conn, _threshold_sql(), {"months": THRESHOLD_LOOKBACK_MONTHS})
+
+    thresholds = {"_default": default_threshold}
+    sources = {
+        "_default": {
+            "value": default_threshold,
+            "source": "override" if "_default" in overrides else "default",
+            "auto_value": None,
+            "basis_months": None,
+            "months_count": 0,
+        }
+    }
+
+    for row in rows:
+        sku = row["sku"]
+        auto_value = row["threshold_pct"]
+        auto_value = float(auto_value) if auto_value is not None else None
+        months_count = int(row["months_count"] or 0)
+
+        if sku in overrides:
+            value = overrides[sku]
+            source = "override"
+        elif auto_value is not None:
+            value = auto_value
+            source = "auto"
+        else:
+            value = default_threshold
+            source = "default"
+
+        thresholds[sku] = value
+        sources[sku] = {
+            "value": value,
+            "source": source,
+            "auto_value": auto_value,
+            "basis_months": THRESHOLD_LOOKBACK_MONTHS,
+            "months_count": months_count,
+            "return_window_days": row["return_window_days"],
+        }
+
+    return thresholds, sources
 
 
 @app.get("/api/settings")
@@ -224,10 +359,14 @@ def get_settings(x_portal_password: Optional[str] = Header(default=None)):
             "SELECT value::INT AS return_buffer_days FROM settings WHERE key = 'return_buffer_days'")
         thr_row = fetchone(conn,
             "SELECT value FROM settings WHERE key = 'return_rate_thresholds'")
-    thresholds = json.loads(thr_row["value"]) if thr_row else {"_default": 15}
+        overrides = _load_threshold_overrides(thr_row["value"] if thr_row else None)
+        thresholds, threshold_sources = _resolved_thresholds(conn, overrides)
+
     return {
         "return_buffer_days":    buf_row["return_buffer_days"] if buf_row else 10,
         "return_rate_thresholds": thresholds,
+        "return_rate_threshold_overrides": overrides,
+        "return_rate_threshold_sources": threshold_sources,
     }
 
 
@@ -241,13 +380,15 @@ def save_settings(
         raise HTTPException(status_code=400, detail="Buffer must be between 0 and 60 days")
 
     with get_db() as conn:
-        execute(conn,
-            "UPDATE settings SET value = %s WHERE key = 'return_buffer_days'",
-            (str(payload.return_buffer_days),))
+        threshold_overrides = _validate_threshold_overrides(payload.return_rate_thresholds)
+        execute(conn, """
+            INSERT INTO settings (key, value) VALUES ('return_buffer_days', %s)
+            ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
+        """, (str(payload.return_buffer_days),))
         execute(conn, """
             INSERT INTO settings (key, value) VALUES ('return_rate_thresholds', %s)
             ON CONFLICT (key) DO UPDATE SET value = EXCLUDED.value
-        """, (json.dumps(payload.return_rate_thresholds),))
+        """, (json.dumps(threshold_overrides),))
 
     started = trigger_reaggregate()
     return {"saved": True, "reaggregating": started}

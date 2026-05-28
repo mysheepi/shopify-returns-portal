@@ -45,6 +45,10 @@ class TestParseNextCursor:
         link = '<https://x/orders.json?page_info=eyJsYXN0X2lk_xyz>; rel="next"'
         assert sync._parse_next_cursor(link) == "eyJsYXN0X2lk_xyz"
 
+    def test_decodes_url_encoded_cursor(self):
+        link = '<https://x/orders.json?page_info=abc%2B123%2F%3D%3D&limit=250>; rel="next"'
+        assert sync._parse_next_cursor(link) == "abc+123/=="
+
     def test_returns_none_when_no_page_info_param(self):
         link = '<https://x/orders.json?limit=250>; rel="next"'
         assert sync._parse_next_cursor(link) is None
@@ -144,6 +148,14 @@ class TestTriggers:
             # daemon=True so the worker is killed on shutdown
             assert mock_thread.call_args.kwargs["daemon"] is True
             mock_instance.start.assert_called_once()
+
+    def test_trigger_sync_marks_running_before_worker_starts(self):
+        with patch("sync.threading.Thread") as mock_thread:
+            mock_instance = MagicMock()
+            mock_thread.return_value = mock_instance
+            assert sync.trigger_sync() is True
+            assert sync.trigger_sync() is False
+            assert mock_thread.call_count == 1
 
     def test_trigger_reaggregate_blocked_when_running(self):
         sync._set_status(running=True)
@@ -499,6 +511,24 @@ class TestFetchPage:
              patch("sync.time.sleep") as mock_sleep:
             sync._fetch_page("http://x", {})
         assert not mock_sleep.called
+
+    def test_ignores_malformed_rate_limit_header(self):
+        mock_200 = MagicMock(status_code=200,
+                             headers={"X-Shopify-Shop-Api-Call-Limit": "not-a-ratio"})
+        mock_200.raise_for_status = MagicMock()
+        with patch("sync.requests.get", return_value=mock_200), \
+             patch("sync.time.sleep") as mock_sleep:
+            assert sync._fetch_page("http://x", {}) is mock_200
+        mock_sleep.assert_not_called()
+
+    def test_malformed_retry_after_uses_default_delay(self):
+        mock_429 = MagicMock(status_code=429, headers={"Retry-After": "later"})
+        mock_200 = MagicMock(status_code=200, headers={})
+        mock_200.raise_for_status = MagicMock()
+        with patch("sync.requests.get", side_effect=[mock_429, mock_200]), \
+             patch("sync.time.sleep") as mock_sleep:
+            assert sync._fetch_page("http://x", {}) is mock_200
+        mock_sleep.assert_called_with(4)
 
     def test_timeout_retries_with_backoff(self):
         import requests as real_requests

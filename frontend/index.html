@@ -151,7 +151,7 @@
   }
   .settings-card {
     background: var(--surface); border-radius: 12px; padding: 32px;
-    width: 540px; max-height: 90vh; overflow-y: auto;
+    width: min(760px, calc(100vw - 32px)); max-height: 90vh; overflow-y: auto;
     box-shadow: 0 8px 40px rgba(0,0,0,.15);
   }
   .settings-card h2 { font-size: 17px; font-weight: 700; margin-bottom: 6px; }
@@ -335,29 +335,37 @@
     </div>
 
     <div class="settings-row">
-      <label>DEFAULT RETURN RATE THRESHOLD (%)</label>
-      <input type="number" x-model.number="thresholdPct['_default']" min="0" max="100" step="0.1">
-      <span class="settings-hint">Return rate cells above this value are highlighted red. Applied to all products unless overridden below.</span>
+      <label>FALLBACK RETURN RATE THRESHOLD (%)</label>
+      <input type="number" x-model.number="thresholdOverrides['_default']" min="0" max="100" step="0.1">
     </div>
 
     <div class="settings-row" style="margin-bottom:8px">
-      <label>PER-PRODUCT RETURN RATE OVERRIDES (%)</label>
-      <div style="max-height:220px;overflow-y:auto;border:1px solid var(--border);border-radius:7px">
-        <template x-for="product in productList" :key="product">
-          <div style="display:flex;align-items:center;gap:10px;padding:6px 10px;border-bottom:1px solid var(--border)">
-            <span style="flex:1;font-size:13px" x-text="product"></span>
+      <label>SKU RETURN RATE THRESHOLDS (%)</label>
+      <div style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:7px">
+        <div style="display:grid;grid-template-columns:minmax(190px,1fr) 88px 90px 92px 84px;gap:10px;padding:7px 10px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.04em">
+          <span>SKU</span>
+          <span style="text-align:right">AUTO</span>
+          <span style="text-align:right">OVERRIDE</span>
+          <span style="text-align:right">EFFECTIVE</span>
+          <span style="text-align:right">SOURCE</span>
+        </div>
+        <template x-for="sku in thresholdSkuList" :key="sku">
+          <div style="display:grid;grid-template-columns:minmax(190px,1fr) 88px 90px 92px 84px;align-items:center;gap:10px;padding:6px 10px;border-bottom:1px solid var(--border)">
+            <span style="font-size:13px;overflow-wrap:anywhere" x-text="sku"></span>
+            <span style="font-size:13px;text-align:right;color:var(--muted)" x-text="formatThreshold(autoThresholdFor(sku))"></span>
             <input type="number"
-                   style="width:74px;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:13px;outline:none"
-                   :placeholder="thresholdPct['_default']"
-                   :value="thresholdPct[product] !== undefined ? thresholdPct[product] : ''"
-                   @input="e => setThreshold(product, e.target.value)"
+                   style="width:90px;padding:5px 8px;border:1px solid var(--border);border-radius:5px;font-size:13px;outline:none;text-align:right"
+                   :placeholder="formatThresholdInput(autoThresholdFor(sku) ?? thresholdOverrides['_default'])"
+                   :value="thresholdOverrides[sku] !== undefined ? thresholdOverrides[sku] : ''"
+                   @input="e => setThreshold(sku, e.target.value)"
                    @focus="e => e.target.style.borderColor='var(--accent)'"
                    @blur="e => e.target.style.borderColor='var(--border)'"
                    min="0" max="100" step="0.1">
+            <span style="font-size:13px;text-align:right" x-text="formatThreshold(effectiveThresholdForSku(sku))"></span>
+            <span style="font-size:11px;text-align:right;color:var(--muted);text-transform:uppercase" x-text="thresholdSourceForSku(sku)"></span>
           </div>
         </template>
       </div>
-      <span class="settings-hint" style="margin-top:4px">Leave blank to use the default threshold above.</span>
     </div>
 
     <div class="settings-actions">
@@ -544,7 +552,9 @@ function portal() {
     showDocs: false,
     bufferInput: 10,
     thresholdPct: { '_default': 15 },
-    productList: [...new Set(Object.values(SKU_PRODUCT))].sort(),
+    thresholdOverrides: { '_default': 15 },
+    thresholdMeta: {},
+    thresholdSkuList: [],
     savingSettings: false,
 
     // ── Init ──────────────────────────────────────────────────────────────
@@ -615,13 +625,16 @@ function portal() {
     // ── Load helpers ──────────────────────────────────────────────────────
     async loadSkus() {
       this.allSkus = await this.api('GET', '/api/skus');
+      this.thresholdSkuList = this.allSkus.map(s => s.sku);
       this.$nextTick(() => this.initTomSelect());
     },
 
     async loadSettings() {
       const s = await this.api('GET', '/api/settings');
-      this.bufferInput  = s.return_buffer_days;
-      this.thresholdPct = s.return_rate_thresholds || { '_default': 15 };
+      this.bufferInput         = s.return_buffer_days;
+      this.thresholdPct        = s.return_rate_thresholds || { '_default': 15 };
+      this.thresholdOverrides  = s.return_rate_threshold_overrides || { '_default': 15 };
+      this.thresholdMeta       = s.return_rate_threshold_sources || {};
     },
 
     setRange(months) {
@@ -741,10 +754,7 @@ function portal() {
         cellStyle: params => {
           const base = { display: 'flex', alignItems: 'center', justifyContent: 'flex-end' };
           if (params.value == null) return base;
-          const product = params.data?.product_name
-            ?? (params.data?.sku ? SKU_PRODUCT[params.data.sku] : null);
-          const thr = this.thresholdPct;
-          const limit = (product != null && thr[product] != null ? thr[product] : (thr['_default'] ?? 15)) / 100;
+          const limit = (this.thresholdForRow(params.data) ?? 15) / 100;
           return params.value > limit
             ? { ...base, background: '#fee2e2', color: '#dc2626', fontWeight: '600' }
             : base;
@@ -764,9 +774,9 @@ function portal() {
         headerClass: 'ag-right-aligned-header' });
 
       const win30 = { headerName: '30D Return Window',
-        children: [ Q('returned_30d','Returned Qty'), R('return_rate_30d','Return Rate'), C('is_30d_closed','Window Closed') ] };
+        children: [ Q('returned_30d_physical','Returned Qty'), R('return_rate_30d_physical','Return Rate'), C('is_30d_closed','Window Closed') ] };
       const win100 = { headerName: '100D Return Window',
-        children: [ Q('returned_100d','Returned Qty'), R('return_rate_100d','Return Rate'), C('is_100d_closed','Window Closed') ] };
+        children: [ Q('returned_100d_physical','Returned Qty'), R('return_rate_100d_physical','Return Rate'), C('is_100d_closed','Window Closed') ] };
       const allRefunds = { headerName: 'All Refunds To Date',
         headerGroupComponent: groupHeader(() => 'All refunds to date (goodwill + physical), monetary'),
         children: [ E('total_revenue','Revenue €'), E('total_refunded_amount','Refunded €'), R('refund_rate_monetary','Refund Rate') ] };
@@ -804,7 +814,11 @@ function portal() {
         : this.rows;
 
       if (this.viewLevel === 'sku') {
-        return base.map(r => ({ ...r, product_name: SKU_PRODUCT[r.sku] || r.sku }));
+        return base.map(r => ({
+          ...r,
+          product_name: SKU_PRODUCT[r.sku] || r.sku,
+          threshold_pct: this.thresholdForSku(r.sku),
+        }));
       }
       // Product-level: aggregate by (product_name, order_month)
       const map = {};
@@ -815,15 +829,22 @@ function portal() {
           map[key] = { product_name: prod, order_month: r.order_month,
             total_ordered: 0, total_revenue: 0, total_refunded_amount: 0,
             returned_30d: 0, returned_100d: 0,
+            returned_30d_physical: 0, returned_100d_physical: 0,
+            threshold_weighted_sum: 0, threshold_weight: 0,
             is_30d_closed: true, is_100d_closed: true,
             return_window_days: r.return_window_days };
         }
         const g = map[key];
+        const ordered = r.total_ordered || 0;
         g.total_ordered            += r.total_ordered            || 0;
         g.total_revenue            += r.total_revenue            || 0;
         g.total_refunded_amount    += r.total_refunded_amount    || 0;
         g.returned_30d             += r.returned_30d             || 0;
         g.returned_100d            += r.returned_100d            || 0;
+        g.returned_30d_physical    += r.returned_30d_physical    || 0;
+        g.returned_100d_physical   += r.returned_100d_physical   || 0;
+        g.threshold_weighted_sum   += this.thresholdForSku(r.sku) * ordered;
+        g.threshold_weight         += ordered;
         g.is_30d_closed             = g.is_30d_closed  && !!r.is_30d_closed;
         g.is_100d_closed            = g.is_100d_closed && !!r.is_100d_closed;
         if (g.return_window_days !== r.return_window_days) g.return_window_days = null;
@@ -832,7 +853,10 @@ function portal() {
         ...g,
         return_rate_30d:  g.total_ordered ? g.returned_30d  / g.total_ordered : null,
         return_rate_100d: g.total_ordered ? g.returned_100d / g.total_ordered : null,
+        return_rate_30d_physical:  g.total_ordered ? g.returned_30d_physical  / g.total_ordered : null,
+        return_rate_100d_physical: g.total_ordered ? g.returned_100d_physical / g.total_ordered : null,
         refund_rate_monetary:      g.total_revenue ? g.total_refunded_amount  / g.total_revenue  : null,
+        threshold_pct:             g.threshold_weight ? g.threshold_weighted_sum / g.threshold_weight : this.thresholdPct['_default'],
       }));
     },
 
@@ -966,11 +990,13 @@ function portal() {
         const seriesRows = displayRows.filter(r => r[groupKey] === key);
         const byMonth = Object.fromEntries(seriesRows.map(r => [r.order_month, r]));
 
-        const rate30Field  = 'return_rate_30d';
-        const rate100Field = 'return_rate_100d';
+        const rate30Field  = 'return_rate_30d_physical';
+        const rate100Field = 'return_rate_100d_physical';
+        const pctValue = (row, field) =>
+          row && row[field] != null ? Number((row[field] * 100).toFixed(2)) : null;
         datasets.push({
           label: `${key} (30d)`,
-          data: months.map(m => byMonth[m] ? (byMonth[m][rate30Field] * 100).toFixed(2) : null),
+          data: months.map(m => pctValue(byMonth[m], rate30Field)),
           borderColor: color,
           backgroundColor: color + '22',
           borderWidth: 2,
@@ -980,7 +1006,7 @@ function portal() {
         });
         datasets.push({
           label: `${key} (100d)`,
-          data: months.map(m => byMonth[m] ? (byMonth[m][rate100Field] * 100).toFixed(2) : null),
+          data: months.map(m => pctValue(byMonth[m], rate100Field)),
           borderColor: color,
           backgroundColor: 'transparent',
           borderWidth: 2,
@@ -1108,9 +1134,10 @@ function portal() {
       try {
         await this.api('POST', '/api/settings', {
           return_buffer_days: this.bufferInput,
-          return_rate_thresholds: this.thresholdPct,
+          return_rate_thresholds: this.thresholdOverridePayload(),
         });
         this.showSettings = false;
+        await this.loadSettings();
         // Redraw immediately so new threshold colours show before reaggregation finishes
         if (this.gridApi) this.gridApi.redrawRows();
         setTimeout(() => this.loadData(), 1500);
@@ -1205,15 +1232,65 @@ function portal() {
       }
     },
 
-    setThreshold(product, val) {
+    thresholdForSku(sku) {
+      return this.thresholdPct[sku] ?? this.thresholdPct['_default'] ?? 15;
+    },
+
+    thresholdForRow(row) {
+      if (!row) return this.thresholdPct['_default'] ?? 15;
+      if (row.threshold_pct != null) return row.threshold_pct;
+      if (row.sku) return this.thresholdForSku(row.sku);
+      return this.thresholdPct['_default'] ?? 15;
+    },
+
+    autoThresholdFor(sku) {
+      const meta = this.thresholdMeta[sku] || {};
+      return meta.auto_value ?? null;
+    },
+
+    effectiveThresholdForSku(sku) {
+      if (this.thresholdOverrides[sku] !== undefined) return this.thresholdOverrides[sku];
+      const auto = this.autoThresholdFor(sku);
+      if (auto !== null && auto !== undefined) return auto;
+      return this.thresholdOverrides['_default'] ?? this.thresholdPct['_default'] ?? 15;
+    },
+
+    thresholdSourceForSku(sku) {
+      if (this.thresholdOverrides[sku] !== undefined) return 'override';
+      const auto = this.autoThresholdFor(sku);
+      return auto !== null && auto !== undefined ? 'auto' : 'default';
+    },
+
+    formatThreshold(value) {
+      return value === null || value === undefined ? '—' : Number(value).toFixed(1) + '%';
+    },
+
+    formatThresholdInput(value) {
+      return value === null || value === undefined ? '' : Number(value).toFixed(1);
+    },
+
+    thresholdOverridePayload() {
+      const allowed = new Set(this.thresholdSkuList);
+      const payload = {};
+      Object.entries(this.thresholdOverrides).forEach(([key, value]) => {
+        if (key === '_default' || allowed.has(key)) {
+          payload[key] = value;
+        }
+      });
+      if (payload['_default'] === undefined) payload['_default'] = 15;
+      return payload;
+    },
+
+    setThreshold(sku, val) {
       const num = parseFloat(val);
-      const t = { ...this.thresholdPct };
+      const t = { ...this.thresholdOverrides };
       if (!val || isNaN(num)) {
-        delete t[product];
+        delete t[sku];
       } else {
-        t[product] = num;
+        t[sku] = num;
       }
-      this.thresholdPct = t;
+      if (t['_default'] === undefined) t['_default'] = 15;
+      this.thresholdOverrides = t;
     },
   };
 }
