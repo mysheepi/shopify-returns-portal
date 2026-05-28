@@ -164,6 +164,12 @@
   }
   .settings-row input:focus { border-color: var(--accent); }
   .settings-hint { font-size: 12px; color: var(--muted); margin-top: 4px; }
+  .settings-note {
+    background: #f8fafc; border: 1px solid var(--border); border-radius: 7px;
+    padding: 12px 14px; margin-bottom: 20px; color: var(--muted);
+    font-size: 12px; line-height: 1.5;
+  }
+  .settings-note strong { color: var(--text); }
   .settings-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
   .docs-card {
     background: var(--surface); border-radius: 12px; padding: 32px;
@@ -337,10 +343,20 @@
     <div class="settings-row">
       <label>FALLBACK RETURN RATE THRESHOLD (%)</label>
       <input type="number" x-model.number="thresholdOverrides['_default']" min="0" max="100" step="0.1">
+      <span class="settings-hint">
+        Used only when a SKU has no closed return-window history yet and no SKU-specific override.
+      </span>
     </div>
 
     <div class="settings-row" style="margin-bottom:8px">
       <label>SKU RETURN RATE THRESHOLDS (%)</label>
+      <div class="settings-note">
+        <strong>Auto</strong> is each SKU's average return rate across its latest 12 closed order months:
+        30-day SKUs use the 30D return rate, and 100-day SKUs use the 100D return rate.
+        <strong>Override</strong> is optional; enter a percentage to replace the auto value for that SKU.
+        Leave it blank to use Auto. <strong>Effective</strong> is the value used to highlight table cells,
+        and <strong>Source</strong> shows whether that value came from Auto, Override, or the fallback above.
+      </div>
       <div style="max-height:280px;overflow-y:auto;border:1px solid var(--border);border-radius:7px">
         <div style="display:grid;grid-template-columns:minmax(190px,1fr) 88px 90px 92px 84px;gap:10px;padding:7px 10px;border-bottom:1px solid var(--border);font-size:11px;font-weight:700;color:var(--muted);letter-spacing:.04em">
           <span>SKU</span>

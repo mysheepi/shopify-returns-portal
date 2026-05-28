@@ -172,6 +172,15 @@ def test_settings_use_sku_threshold_overrides():
     assert "thresholdOverridePayload()" in HTML
 
 
+def test_settings_document_threshold_calculation_and_override():
+    assert "latest 12 closed order months" in HTML
+    assert "30-day SKUs use the 30D return rate" in HTML
+    assert "100-day SKUs use the 100D return rate" in HTML
+    assert "Leave it blank to use Auto" in HTML
+    assert "Source" in HTML
+    assert "fallback" in HTML
+
+
 def test_thresholds_loaded_as_resolved_values_and_overrides():
     assert "this.thresholdPct        = s.return_rate_thresholds" in HTML
     assert "this.thresholdOverrides  = s.return_rate_threshold_overrides" in HTML
