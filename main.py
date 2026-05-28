@@ -267,8 +267,8 @@ def _threshold_sql():
             SELECT
                 sms.sku,
                 CASE
-                    WHEN sc.return_window_days = 100 THEN sms.return_rate_100d_physical
-                    ELSE sms.return_rate_30d_physical
+                    WHEN sc.return_window_days = 100 THEN sms.return_rate_100d
+                    ELSE sms.return_rate_30d
                 END AS return_rate,
                 ROW_NUMBER() OVER (
                     PARTITION BY sms.sku
@@ -279,12 +279,12 @@ def _threshold_sql():
             WHERE (
                     sc.return_window_days = 100
                     AND sms.is_100d_closed
-                    AND sms.return_rate_100d_physical IS NOT NULL
+                    AND sms.return_rate_100d IS NOT NULL
                 )
                 OR (
                     sc.return_window_days <> 100
                     AND sms.is_30d_closed
-                    AND sms.return_rate_30d_physical IS NOT NULL
+                    AND sms.return_rate_30d IS NOT NULL
                 )
         ),
         trailing_thresholds AS (

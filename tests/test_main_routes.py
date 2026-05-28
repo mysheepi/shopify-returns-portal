@@ -372,8 +372,10 @@ def test_get_settings_auto_threshold_sql_uses_last_12_closed_months(
     assert "ROW_NUMBER() OVER" in sql
     assert "rn <= %(months)s" in sql
     assert params == {"months": 12}
-    assert "return_rate_30d_physical" in sql
-    assert "return_rate_100d_physical" in sql
+    assert "sms.return_rate_30d" in sql
+    assert "sms.return_rate_100d" in sql
+    assert "return_rate_30d_physical" not in sql
+    assert "return_rate_100d_physical" not in sql
     assert "sms.is_30d_closed" in sql
     assert "sms.is_100d_closed" in sql
 

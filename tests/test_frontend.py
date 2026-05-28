@@ -148,25 +148,20 @@ def test_chart_tooltip_handles_null_y():
     assert "ctx.parsed.y ?? '—'" in HTML
 
 
-def test_return_window_columns_use_physical_return_metrics():
-    """Displayed return-window quantity/rate should exclude goodwill-only refunds."""
-    for field in [
-        "returned_30d_physical",
-        "return_rate_30d_physical",
-        "returned_100d_physical",
-        "return_rate_100d_physical",
-    ]:
-        assert field in HTML
-    assert "Q('returned_30d_physical','Returned Qty')" in HTML
-    assert "R('return_rate_30d_physical','Return Rate')" in HTML
-    assert "Q('returned_100d_physical','Returned Qty')" in HTML
-    assert "R('return_rate_100d_physical','Return Rate')" in HTML
+def test_return_window_columns_use_displayed_all_return_metrics():
+    """Displayed return-window quantity/rate must use the populated all-return fields."""
+    assert "Q('returned_30d','Returned Qty')" in HTML
+    assert "R('return_rate_30d','Return Rate')" in HTML
+    assert "Q('returned_100d','Returned Qty')" in HTML
+    assert "R('return_rate_100d','Return Rate')" in HTML
+    assert "Q('returned_30d_physical','Returned Qty')" not in HTML
+    assert "R('return_rate_30d_physical','Return Rate')" not in HTML
 
 
-def test_product_rollup_aggregates_physical_return_metrics():
-    assert "returned_30d_physical: 0" in HTML
-    assert "g.returned_30d_physical    += r.returned_30d_physical" in HTML
-    assert "return_rate_30d_physical:  g.total_ordered ? g.returned_30d_physical" in HTML
+def test_product_rollup_aggregates_displayed_all_return_metrics():
+    assert "returned_30d: 0, returned_100d: 0" in HTML
+    assert "g.returned_30d             += r.returned_30d" in HTML
+    assert "return_rate_30d:  g.total_ordered ? g.returned_30d" in HTML
 
 
 def test_settings_use_sku_threshold_overrides():
@@ -194,7 +189,7 @@ def test_product_rollup_weights_sku_thresholds_by_ordered_qty():
     assert "g.threshold_weight ? g.threshold_weighted_sum / g.threshold_weight" in HTML
 
 
-def test_chart_uses_physical_rates_and_preserves_null_points():
-    assert "const rate30Field  = 'return_rate_30d_physical'" in HTML
-    assert "const rate100Field = 'return_rate_100d_physical'" in HTML
+def test_chart_uses_displayed_rates_and_preserves_null_points():
+    assert "const rate30Field  = 'return_rate_30d'" in HTML
+    assert "const rate100Field = 'return_rate_100d'" in HTML
     assert "row && row[field] != null ? Number((row[field] * 100).toFixed(2)) : null" in HTML
