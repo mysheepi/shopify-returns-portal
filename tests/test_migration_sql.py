@@ -2,7 +2,7 @@
 Static validation of migrations/001_init.sql.
 
 Goals:
-- All 65 SKUs are seeded (5 with 100-day window, 60 with 30-day window).
+- All finalized SKUs are seeded (5 with 100-day window; the rest with 30-day window).
 - CREATE TABLE statements exist for every table the application references.
 - All required check constraints and indexes are present.
 - Default settings row exists.
@@ -65,7 +65,7 @@ def test_sku_seed_total_count(sql):
 
 
 def test_sku_seed_100day_count(sql):
-    """Exactly 5 SKUs must have a 100-day return window (MS.HOME pillow line)."""
+    """Exactly 5 SKUs must have a 100-day return window."""
     skus = _parse_sku_inserts(sql)
     hundreds = [s for s, d in skus if d == 100]
     assert len(hundreds) == 5, (
