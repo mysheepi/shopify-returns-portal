@@ -59,7 +59,9 @@ def _get_agg_sql():
     """Capture the SQL issued by run_aggregation."""
     captured = {}
 
-    def _capture(_conn, sql, params):
+    def _capture(_conn, sql, params=None):
+        # run_aggregation issues the orphan cleanup first, then the upsert;
+        # the upsert is last, so it wins the capture.
         captured["sql"] = sql
 
     with patch("aggregate.fetchone", return_value={"days": 10}), \

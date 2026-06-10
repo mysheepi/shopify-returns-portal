@@ -35,8 +35,9 @@ def test_run_aggregation_reads_buffer_from_settings():
         assert "return_buffer_days" in select_sql
         assert "settings" in select_sql
 
-        # execute called once with our buffer in named-param form
-        assert mock_exec.call_count == 1
+        # execute called twice: orphan-stats cleanup, then the aggregation
+        # upsert with our buffer in named-param form (the last call)
+        assert mock_exec.call_count == 2
         _, sql, params = mock_exec.call_args[0]
         assert params == {"buf": 25}
 
@@ -71,7 +72,9 @@ def _get_sql():
     """Return the SQL that run_aggregation issues."""
     captured = {}
 
-    def _capture(_conn, sql, params):
+    def _capture(_conn, sql, params=None):
+        # Aggregation issues two statements (orphan cleanup, then the upsert);
+        # the upsert is last, so it wins the capture.
         captured["sql"] = sql
         captured["params"] = params
 

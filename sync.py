@@ -90,7 +90,7 @@ def _fetch_page(url, params, max_retries=3):
 
             return resp
 
-        except requests.Timeout:
+        except (requests.Timeout, requests.ConnectionError):
             if attempt == max_retries - 1:
                 raise
             time.sleep(2 ** attempt)
@@ -129,7 +129,10 @@ def _fetch_return_dates(order_id, return_ids):
             if rid in return_ids and ret.get("created_at"):
                 result[rid] = parse_dt(ret["created_at"]).date()
         return result
-    except Exception:
+    except Exception as exc:
+        # Fall back to refund_date-based day counting, but leave a trace —
+        # silently losing return dates skews days_to_refund for physical returns.
+        logging.warning("Failed to fetch return dates for order %s: %s", order_id, exc)
         return {}
 
 
@@ -299,8 +302,13 @@ def _update_sync_progress(sync_id, cursor, orders, refunds):
         """, (cursor, orders, refunds, sync_id))
 
 
-def _complete_sync(sync_id, orders, refunds):
-    watermark = datetime.now(timezone.utc)
+def _complete_sync(sync_id, orders, refunds, watermark=None):
+    # The watermark must be the time the sync STARTED, not when it completed:
+    # orders updated while the sync was running may have been missed on pages
+    # fetched earlier, so the next incremental pass has to re-scan from the
+    # start of this one (the upserts are idempotent, overlap is safe).
+    if watermark is None:
+        watermark = datetime.now(timezone.utc)
     with get_db() as conn:
         execute(conn, """
             UPDATE sync_log
@@ -323,6 +331,7 @@ def _fail_sync(sync_id, error_msg):
 def _run_sync_worker():
     sync_id = None
     try:
+        run_started = datetime.now(timezone.utc)
         sync_type, watermark = _determine_sync_type()
 
         # Resume an interrupted full sync if one exists
@@ -333,14 +342,17 @@ def _run_sync_worker():
             # Read from DB — _status resets to 0 on process restart
             with get_db() as conn:
                 row = fetchone(conn,
-                    "SELECT orders_synced, refunds_synced FROM sync_log WHERE id = %s",
+                    "SELECT orders_synced, refunds_synced, started_at FROM sync_log WHERE id = %s",
                     (resume_id,))
             orders_done  = row["orders_synced"]  if row else 0
             refunds_done = row["refunds_synced"] if row else 0
+            # Cover the original run's window, not just this resume's
+            next_watermark = (row.get("started_at") if row else None) or run_started
         else:
-            sync_id      = _create_sync_log(sync_type)
-            orders_done  = 0
-            refunds_done = 0
+            sync_id        = _create_sync_log(sync_type)
+            orders_done    = 0
+            refunds_done   = 0
+            next_watermark = run_started
 
         _set_status(
             running=True, type=sync_type,
@@ -398,7 +410,7 @@ def _run_sync_worker():
         with get_db() as conn:
             run_aggregation(conn)
 
-        _complete_sync(sync_id, orders_done, refunds_done)
+        _complete_sync(sync_id, orders_done, refunds_done, next_watermark)
         _set_status(running=False, completed_at=datetime.now(timezone.utc).isoformat())
 
     except Exception as exc:
@@ -415,11 +427,28 @@ def _run_sync_worker():
         raise
 
 
-def trigger_sync():
-    """Start sync in background thread. Returns False if already running."""
+def trigger_sync(force=False):
+    """Start sync in background thread. Returns False if already running.
+
+    force=True clears the last watermark and abandons any interrupted full
+    sync, so the worker starts a fresh full sync from FULL_SYNC_START.
+    The clearing happens only AFTER the running-lock is acquired — a forced
+    trigger that loses the race must not destroy the watermark of the sync
+    that is already in flight. Note the lock is in-process: this guarantee
+    holds for the single-worker deployment, not across multiple instances.
+    """
     if not _try_mark_running():
         return False
     try:
+        if force:
+            with get_db() as conn:
+                execute(conn, "UPDATE sync_log SET watermark = NULL WHERE status = 'complete'")
+                execute(conn, """
+                    UPDATE sync_log
+                       SET status = 'error', completed_at = now(),
+                           error_message = 'superseded by forced full resync'
+                     WHERE status = 'running'
+                """)
         t = threading.Thread(target=_run_sync_worker, daemon=True)
         t.start()
     except Exception as exc:

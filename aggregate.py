@@ -5,6 +5,13 @@ def run_aggregation(conn):
     buf_row = fetchone(conn, "SELECT value::INT AS days FROM settings WHERE key = 'return_buffer_days'")
     buffer = buf_row["days"] if buf_row else 10
 
+    # Drop stats for SKUs removed from sku_config — /api/returns reads
+    # sku_monthly_stats directly, so stale rows would linger forever.
+    execute(conn, """
+        DELETE FROM sku_monthly_stats
+        WHERE sku NOT IN (SELECT sku FROM sku_config)
+    """)
+
     sql = """
     WITH ordered AS (
         SELECT

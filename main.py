@@ -10,7 +10,6 @@ _MONTH_RE = _re.compile(r'^\d{4}-(0[1-9]|1[0-2])$')
 
 from fastapi import FastAPI, Header, HTTPException, Query
 from fastapi.responses import FileResponse, StreamingResponse
-from fastapi.staticfiles import StaticFiles
 from pydantic import BaseModel, Field
 import io
 import csv
@@ -196,18 +195,10 @@ def sync_trigger(
     x_portal_password: Optional[str] = Header(default=None),
 ):
     require_auth(x_portal_password)
-    if force:
-        with get_db() as conn:
-            execute(conn, """
-                UPDATE sync_log SET watermark = NULL
-                WHERE id = (
-                    SELECT id FROM sync_log
-                    WHERE status = 'complete'
-                    ORDER BY completed_at DESC
-                    LIMIT 1
-                )
-            """)
-    started = trigger_sync()
+    # Watermark clearing for force=True lives inside trigger_sync, AFTER the
+    # running-lock is acquired — wiping it here would destroy the watermark
+    # even when the trigger is rejected with 409.
+    started = trigger_sync(force=force)
     if not started:
         raise HTTPException(status_code=409, detail="Sync already running")
     return {"started": True}
@@ -243,7 +234,8 @@ def _load_threshold_overrides(raw_value):
         except (TypeError, ValueError):
             continue
 
-    overrides.setdefault("_default", DEFAULT_RETURN_RATE_THRESHOLD)
+    # No setdefault here: _resolved_thresholds uses "_default" membership to
+    # report whether the fallback threshold was explicitly overridden.
     return overrides
 
 
@@ -257,7 +249,11 @@ def _validate_threshold_overrides(payload):
         except (TypeError, ValueError):
             raise HTTPException(status_code=400, detail="Thresholds must be between 0 and 100")
 
-    overrides.setdefault("_default", DEFAULT_RETURN_RATE_THRESHOLD)
+    # Don't persist the fallback when it just equals the built-in default —
+    # the frontend always echoes it back, and storing it would make the
+    # '_default' source read "override" for a value the user never touched.
+    if overrides.get("_default") == DEFAULT_RETURN_RATE_THRESHOLD:
+        overrides.pop("_default")
     return overrides
 
 
@@ -365,7 +361,9 @@ def get_settings(x_portal_password: Optional[str] = Header(default=None)):
     return {
         "return_buffer_days":    buf_row["return_buffer_days"] if buf_row else 10,
         "return_rate_thresholds": thresholds,
-        "return_rate_threshold_overrides": overrides,
+        "return_rate_threshold_overrides": {
+            "_default": DEFAULT_RETURN_RATE_THRESHOLD, **overrides,
+        },
         "return_rate_threshold_sources": threshold_sources,
     }
 
