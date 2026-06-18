@@ -190,6 +190,13 @@
   .sku-catalog input[type=text]:focus, .sku-catalog select:focus { border-color: var(--accent); }
   .sku-catalog input[disabled] { color: var(--muted); background: #f8fafc; }
   .catalog-status { min-height: 18px; font-size: 12px; color: var(--muted); }
+  .sku-tutorial summary {
+    cursor: pointer; font-weight: 700; color: var(--text); margin-bottom: 8px;
+  }
+  .sku-tutorial ol, .sku-tutorial ul { margin-left: 18px; }
+  .sku-tutorial li { margin: 6px 0; }
+  .sku-tutorial .tutorial-section { margin-top: 12px; }
+  .sku-tutorial .tutorial-title { font-weight: 700; color: var(--text); margin-bottom: 4px; }
   .docs-card {
     background: var(--surface); border-radius: 12px; padding: 32px;
     width: 680px; max-height: 90vh; overflow-y: auto;
@@ -373,6 +380,62 @@
         Active SKUs are included in sync, reporting, product filters, and threshold calculations.
         New SKUs need a full resync before old Shopify orders can appear.
       </div>
+      <details class="settings-note sku-tutorial">
+        <summary>How to add, change, deactivate, and resync SKUs</summary>
+
+        <div class="tutorial-section">
+          <div class="tutorial-title">Before you start</div>
+          <ul>
+            <li><strong>SKU</strong> means the exact Shopify variant SKU. Copy it exactly, including dots, dashes, capital letters, and size text.</li>
+            <li><strong>Product</strong> is the product family name shown in the dashboard, filters, charts, and exports.</li>
+            <li><strong>Trial</strong> is the return window for that SKU: choose <strong>30d</strong> or <strong>100d</strong>.</li>
+            <li><strong>Active</strong> means the portal tracks and shows the SKU. Inactive SKUs are hidden from normal reports.</li>
+          </ul>
+        </div>
+
+        <div class="tutorial-section">
+          <div class="tutorial-title">Add a new SKU</div>
+          <ol>
+            <li>Click <strong>+ Add SKU</strong>.</li>
+            <li>Type or paste the exact SKU into the new blank SKU field.</li>
+            <li>Type the product family name into <strong>Product</strong>.</li>
+            <li>Choose the correct <strong>Trial</strong>: usually 30d, or 100d for SKUs that have a 100-day return window.</li>
+            <li>Leave <strong>Active</strong> checked.</li>
+            <li>Click <strong>Save catalog</strong> if you only need the SKU tracked from now on.</li>
+            <li>Click <strong>Save + full resync</strong> if you need old Shopify orders for this new SKU to appear in the dashboard.</li>
+          </ol>
+        </div>
+
+        <div class="tutorial-section">
+          <div class="tutorial-title">Change an existing SKU</div>
+          <ol>
+            <li>Find the SKU row in the catalog table.</li>
+            <li>Edit the <strong>Product</strong> name if the dashboard grouping should change.</li>
+            <li>Change the <strong>Trial</strong> if the SKU belongs to the other return window.</li>
+            <li>Click <strong>Save catalog</strong>.</li>
+            <li>If you need to change the SKU code itself, deactivate the old row and add a new row with the corrected SKU.</li>
+          </ol>
+        </div>
+
+        <div class="tutorial-section">
+          <div class="tutorial-title">Deactivate or reactivate a SKU</div>
+          <ol>
+            <li>Click <strong>Deactivate</strong> on a SKU you no longer want to track.</li>
+            <li>Click <strong>Save catalog</strong>. The SKU is hidden from normal reports, but its old stored data is not erased.</li>
+            <li>To bring it back later, click <strong>Reactivate</strong> and then <strong>Save catalog</strong>.</li>
+            <li>If the reactivated SKU is missing historical orders, use <strong>Save + full resync</strong>.</li>
+          </ol>
+        </div>
+
+        <div class="tutorial-section">
+          <div class="tutorial-title">When to full resync</div>
+          <ul>
+            <li>Use <strong>Save + full resync</strong> after adding a brand-new SKU that already has historical Shopify orders.</li>
+            <li>A full resync can take several minutes. The sync badge at the top of the page will show progress.</li>
+            <li>Use ordinary <strong>Save catalog</strong> for simple product-name changes, trial changes, deactivations, and reactivations when old order backfill is not needed.</li>
+          </ul>
+        </div>
+      </details>
       <div class="catalog-status" x-text="skuCatalogError"></div>
       <div class="sku-catalog">
         <div class="sku-catalog-row sku-catalog-head">

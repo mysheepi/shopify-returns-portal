@@ -183,6 +183,15 @@ def test_settings_has_editable_sku_catalog():
     assert "/api/returns/reaggregate" in HTML
 
 
+def test_sku_catalog_has_beginner_tutorial():
+    assert "How to add, change, deactivate, and resync SKUs" in HTML
+    assert "Add a new SKU" in HTML
+    assert "Change an existing SKU" in HTML
+    assert "Deactivate or reactivate a SKU" in HTML
+    assert "When to full resync" in HTML
+    assert "Save + full resync" in HTML
+
+
 def test_frontend_uses_api_catalog_for_product_names():
     assert "const SKU_PRODUCT" not in HTML
     assert "this.skuProductMap" in HTML
