@@ -97,8 +97,10 @@ def test_auth_verify_uses_constant_time_compare(client):
 
 @pytest.mark.parametrize("method,path", [
     ("GET",  "/api/skus"),
+    ("DELETE", "/api/skus/SKU-A"),
     ("GET",  "/api/returns"),
     ("GET",  "/api/returns/export"),
+    ("POST", "/api/returns/reaggregate"),
     ("GET",  "/api/sync/status"),
     ("POST", "/api/sync/trigger"),
     ("GET",  "/api/settings"),
@@ -113,6 +115,17 @@ def test_settings_post_rejects_no_auth(client):
     assert r.status_code == 401
 
 
+def test_sku_writes_reject_no_auth_with_valid_body(client):
+    payload = {"sku": "SKU-X", "product_name": "Product X",
+               "return_window_days": 30, "is_active": True}
+    assert client.post("/api/skus", json=payload).status_code == 401
+    assert client.patch("/api/skus/SKU-X", json={
+        "product_name": "Product X",
+        "return_window_days": 30,
+        "is_active": True,
+    }).status_code == 401
+
+
 def test_protected_routes_reject_wrong_password(client):
     r = client.get("/api/skus", headers={"X-Portal-Password": "nope"})
     assert r.status_code == 401
@@ -122,8 +135,10 @@ def test_protected_routes_reject_wrong_password(client):
 
 def test_get_skus_returns_list(client, auth_headers, fake_db_ctx):
     fake_rows = [
-        {"sku": "MS.HOME.80x40.A1", "return_window_days": 100},
-        {"sku": "MS.MASK.GREY",     "return_window_days": 30},
+        {"sku": "MS.HOME.80x40.A1", "product_name": "Home Pillow",
+         "return_window_days": 100, "is_active": True},
+        {"sku": "MS.MASK.GREY", "product_name": "Sleep Mask",
+         "return_window_days": 30, "is_active": True},
     ]
     with patch("main.get_db", fake_db_ctx), \
          patch("main.query", return_value=fake_rows) as mock_q:
@@ -133,7 +148,85 @@ def test_get_skus_returns_list(client, auth_headers, fake_db_ctx):
     # Verify the SQL is the read-only sku_config query
     sql = mock_q.call_args.args[1]
     assert "sku_config" in sql
-    assert "ORDER BY sku" in sql
+    assert "product_name" in sql
+    assert "is_active = TRUE" in sql
+    assert "ORDER BY product_name, sku" in sql
+
+
+def test_get_skus_can_include_inactive(client, auth_headers, fake_db_ctx):
+    with patch("main.get_db", fake_db_ctx), \
+         patch("main.query", return_value=[]) as mock_q:
+        r = client.get("/api/skus?include_inactive=true", headers=auth_headers)
+    assert r.status_code == 200
+    sql = mock_q.call_args.args[1]
+    assert "WHERE is_active = TRUE" not in sql
+
+
+def test_create_sku_upserts_catalog_row(client, auth_headers, fake_db_ctx):
+    fake_row = {"sku": "SKU-X", "product_name": "Product X",
+                "return_window_days": 30, "is_active": True}
+    with patch("main.get_db", fake_db_ctx), \
+         patch("main.fetchone", return_value=fake_row) as mock_fetch, \
+         patch("main.trigger_reaggregate", return_value=True):
+        r = client.post("/api/skus", headers=auth_headers,
+                        json=fake_row)
+    assert r.status_code == 200
+    body = r.json()
+    assert body["sku"] == fake_row
+    sql, params = mock_fetch.call_args.args[1], mock_fetch.call_args.args[2]
+    assert "INSERT INTO sku_config" in sql
+    assert "product_name" in sql
+    assert params == ("SKU-X", "Product X", 30, True)
+
+
+def test_update_sku_edits_catalog_row(client, auth_headers, fake_db_ctx):
+    fake_row = {"sku": "SKU-X", "product_name": "Product Y",
+                "return_window_days": 100, "is_active": False}
+    with patch("main.get_db", fake_db_ctx), \
+         patch("main.fetchone", return_value=fake_row) as mock_fetch, \
+         patch("main.trigger_reaggregate", return_value=False):
+        r = client.patch("/api/skus/SKU-X", headers=auth_headers,
+                         json={"product_name": "Product Y",
+                               "return_window_days": 100,
+                               "is_active": False})
+    assert r.status_code == 200
+    sql, params = mock_fetch.call_args.args[1], mock_fetch.call_args.args[2]
+    assert "UPDATE sku_config" in sql
+    assert params == ("Product Y", 100, False, "SKU-X")
+
+
+def test_delete_sku_soft_deactivates(client, auth_headers, fake_db_ctx):
+    fake_row = {"sku": "SKU-X", "product_name": "Product X",
+                "return_window_days": 30, "is_active": False}
+    with patch("main.get_db", fake_db_ctx), \
+         patch("main.fetchone", return_value=fake_row) as mock_fetch, \
+         patch("main.trigger_reaggregate", return_value=True):
+        r = client.delete("/api/skus/SKU-X", headers=auth_headers)
+    assert r.status_code == 200
+    sql, params = mock_fetch.call_args.args[1], mock_fetch.call_args.args[2]
+    assert "SET is_active = FALSE" in sql
+    assert params == ("SKU-X",)
+
+
+def test_sku_save_can_defer_reaggregate(client, auth_headers, fake_db_ctx):
+    fake_row = {"sku": "SKU-X", "product_name": "Product X",
+                "return_window_days": 30, "is_active": True}
+    with patch("main.get_db", fake_db_ctx), \
+         patch("main.fetchone", return_value=fake_row), \
+         patch("main.trigger_reaggregate") as mock_reagg:
+        r = client.post("/api/skus?reaggregate=false", headers=auth_headers,
+                        json=fake_row)
+    assert r.status_code == 200
+    assert r.json()["reaggregating"] is False
+    mock_reagg.assert_not_called()
+
+
+def test_create_sku_rejects_invalid_window(client, auth_headers, fake_db_ctx):
+    with patch("main.get_db", fake_db_ctx):
+        r = client.post("/api/skus", headers=auth_headers,
+                        json={"sku": "SKU-X", "product_name": "Product X",
+                              "return_window_days": 45})
+    assert r.status_code == 400
 
 
 # ── /api/returns: filter SQL construction ────────────────────────────────────
@@ -144,7 +237,7 @@ def test_returns_no_filters(client, auth_headers, fake_db_ctx):
         r = client.get("/api/returns", headers=auth_headers)
     assert r.status_code == 200
     sql, params = mock_q.call_args.args[1], mock_q.call_args.args[2]
-    assert "WHERE" not in sql
+    assert "WHERE sc.is_active = TRUE" in sql
     assert params is None
 
 
@@ -157,7 +250,7 @@ def test_returns_filter_by_sku_list(client, auth_headers, fake_db_ctx):
         )
     assert r.status_code == 200
     sql, params = mock_q.call_args.args[1], mock_q.call_args.args[2]
-    assert "sku = ANY(%s)" in sql
+    assert "sms.sku = ANY(%s)" in sql
     assert params == [["SKU-A", "SKU-B", "SKU-C"]]
 
 
@@ -175,7 +268,7 @@ def test_returns_ignores_blank_sku_filter(client, auth_headers, fake_db_ctx):
         r = client.get("/api/returns?skus=,+,+", headers=auth_headers)
     assert r.status_code == 200
     sql, params = mock_q.call_args.args[1], mock_q.call_args.args[2]
-    assert "sku = ANY(%s)" not in sql
+    assert "sms.sku = ANY(%s)" not in sql
     assert params is None
 
 
@@ -302,6 +395,20 @@ def test_sync_trigger_starts_when_idle(client, auth_headers):
 def test_sync_trigger_returns_409_when_already_running(client, auth_headers):
     with patch("main.trigger_sync", return_value=False):
         r = client.post("/api/sync/trigger", headers=auth_headers)
+    assert r.status_code == 409
+
+
+def test_reaggregate_endpoint_starts_when_idle(client, auth_headers):
+    with patch("main.trigger_reaggregate", return_value=True) as mock_t:
+        r = client.post("/api/returns/reaggregate", headers=auth_headers)
+    assert r.status_code == 200
+    assert r.json() == {"started": True}
+    mock_t.assert_called_once()
+
+
+def test_reaggregate_endpoint_returns_409_when_running(client, auth_headers):
+    with patch("main.trigger_reaggregate", return_value=False):
+        r = client.post("/api/returns/reaggregate", headers=auth_headers)
     assert r.status_code == 409
 
 

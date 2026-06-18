@@ -159,8 +159,10 @@ def _upsert_order(conn, order):
         if not sku:
             continue
 
-        # Only track SKUs we know about
-        known = fetchone(conn, "SELECT 1 FROM sku_config WHERE sku = %s", (sku,))
+        # Only track active SKUs from the editable catalog.
+        known = fetchone(conn,
+            "SELECT 1 FROM sku_config WHERE sku = %s AND is_active = TRUE",
+            (sku,))
         if not known:
             continue
 

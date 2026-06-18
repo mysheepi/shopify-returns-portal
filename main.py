@@ -71,12 +71,122 @@ def auth_verify(x_portal_password: Optional[str] = Header(default=None)):
 
 # ── SKUs ─────────────────────────────────────────────────────────────────────
 
+class SkuCreatePayload(BaseModel):
+    sku: str = Field(..., min_length=1, max_length=120)
+    product_name: str = Field(..., min_length=1, max_length=255)
+    return_window_days: int
+    is_active: bool = True
+
+
+class SkuUpdatePayload(BaseModel):
+    product_name: str = Field(..., min_length=1, max_length=255)
+    return_window_days: int
+    is_active: bool = True
+
+
+def _validate_sku_values(sku, product_name, return_window_days):
+    sku = str(sku or "").strip()
+    product_name = str(product_name or "").strip()
+    if not sku:
+        raise HTTPException(status_code=400, detail="SKU is required")
+    if not product_name:
+        raise HTTPException(status_code=400, detail="Product name is required")
+    if return_window_days not in (30, 100):
+        raise HTTPException(status_code=400, detail="Return window must be 30 or 100 days")
+    return sku, product_name, return_window_days
+
+
 @app.get("/api/skus")
-def get_skus(x_portal_password: Optional[str] = Header(default=None)):
+def get_skus(
+    include_inactive: bool = Query(default=False),
+    x_portal_password: Optional[str] = Header(default=None),
+):
+    require_auth(x_portal_password)
+    where = "" if include_inactive else "WHERE is_active = TRUE"
+    with get_db() as conn:
+        rows = query(conn, f"""
+            SELECT sku, product_name, return_window_days, is_active
+            FROM sku_config
+            {where}
+            ORDER BY product_name, sku
+        """)
+    return [dict(r) for r in rows]
+
+
+@app.post("/api/skus")
+def create_sku(
+    payload: SkuCreatePayload,
+    reaggregate: bool = Query(default=True),
+    x_portal_password: Optional[str] = Header(default=None),
+):
+    require_auth(x_portal_password)
+    sku, product_name, return_window_days = _validate_sku_values(
+        payload.sku, payload.product_name, payload.return_window_days
+    )
+    with get_db() as conn:
+        row = fetchone(conn, """
+            INSERT INTO sku_config (sku, product_name, return_window_days, is_active, updated_at)
+            VALUES (%s, %s, %s, %s, now())
+            ON CONFLICT (sku) DO UPDATE
+                SET product_name = EXCLUDED.product_name,
+                    return_window_days = EXCLUDED.return_window_days,
+                    is_active = EXCLUDED.is_active,
+                    updated_at = now()
+            RETURNING sku, product_name, return_window_days, is_active
+        """, (sku, product_name, return_window_days, payload.is_active))
+
+    started = trigger_reaggregate() if reaggregate else False
+    return {"saved": True, "reaggregating": started, "sku": dict(row)}
+
+
+@app.patch("/api/skus/{sku}")
+def update_sku(
+    sku: str,
+    payload: SkuUpdatePayload,
+    reaggregate: bool = Query(default=True),
+    x_portal_password: Optional[str] = Header(default=None),
+):
+    require_auth(x_portal_password)
+    sku, product_name, return_window_days = _validate_sku_values(
+        sku, payload.product_name, payload.return_window_days
+    )
+    with get_db() as conn:
+        row = fetchone(conn, """
+            UPDATE sku_config
+               SET product_name = %s,
+                   return_window_days = %s,
+                   is_active = %s,
+                   updated_at = now()
+             WHERE sku = %s
+             RETURNING sku, product_name, return_window_days, is_active
+        """, (product_name, return_window_days, payload.is_active, sku))
+    if not row:
+        raise HTTPException(status_code=404, detail="SKU not found")
+
+    started = trigger_reaggregate() if reaggregate else False
+    return {"saved": True, "reaggregating": started, "sku": dict(row)}
+
+
+@app.delete("/api/skus/{sku}")
+def deactivate_sku(
+    sku: str,
+    reaggregate: bool = Query(default=True),
+    x_portal_password: Optional[str] = Header(default=None),
+):
     require_auth(x_portal_password)
     with get_db() as conn:
-        rows = query(conn, "SELECT sku, return_window_days FROM sku_config ORDER BY sku")
-    return [dict(r) for r in rows]
+        row = fetchone(conn, """
+            UPDATE sku_config
+               SET is_active = FALSE,
+                   updated_at = now()
+             WHERE sku = %s
+             RETURNING sku, product_name, return_window_days, is_active
+        """, (sku.strip(),))
+    if not row:
+        raise HTTPException(status_code=404, detail="SKU not found")
+
+    started = trigger_reaggregate() if reaggregate else False
+    return {"saved": True, "reaggregating": started, "sku": dict(row)}
 
 
 # ── Returns data ─────────────────────────────────────────────────────────────
@@ -95,36 +205,37 @@ def get_returns(
     if to_month and not _MONTH_RE.match(to_month):
         raise HTTPException(status_code=400, detail="Invalid 'to' month, expected YYYY-MM")
 
-    conditions = []
+    conditions = ["sc.is_active = TRUE"]
     params: list = []
 
     if skus:
         sku_list = [s.strip() for s in skus.split(",") if s.strip()]
         if sku_list:
-            conditions.append("sku = ANY(%s)")
+            conditions.append("sms.sku = ANY(%s)")
             params.append(sku_list)
 
     if from_month:
-        conditions.append("order_month >= DATE_TRUNC('month', %s::DATE)")
+        conditions.append("sms.order_month >= DATE_TRUNC('month', %s::DATE)")
         params.append(f"{from_month}-01")
 
     if to_month:
-        conditions.append("order_month <= DATE_TRUNC('month', %s::DATE)")
+        conditions.append("sms.order_month <= DATE_TRUNC('month', %s::DATE)")
         params.append(f"{to_month}-01")
 
-    where = ("WHERE " + " AND ".join(conditions)) if conditions else ""
+    where = "WHERE " + " AND ".join(conditions)
     sql = f"""
-        SELECT sku, TO_CHAR(order_month, 'YYYY-MM') AS order_month,
-               return_window_days, total_ordered,
-               returned_30d,           return_rate_30d,           is_30d_closed,
-               returned_100d,          return_rate_100d,          is_100d_closed,
-               returned_30d_physical,  return_rate_30d_physical,
-               returned_100d_physical, return_rate_100d_physical,
-               total_revenue,
-               total_refunded_amount,  refund_rate_monetary
-        FROM sku_monthly_stats
+        SELECT sms.sku, TO_CHAR(sms.order_month, 'YYYY-MM') AS order_month,
+               sc.return_window_days, sms.total_ordered,
+               sms.returned_30d,           sms.return_rate_30d,           sms.is_30d_closed,
+               sms.returned_100d,          sms.return_rate_100d,          sms.is_100d_closed,
+               sms.returned_30d_physical,  sms.return_rate_30d_physical,
+               sms.returned_100d_physical, sms.return_rate_100d_physical,
+               sms.total_revenue,
+               sms.total_refunded_amount,  sms.refund_rate_monetary
+        FROM sku_monthly_stats sms
+        JOIN sku_config sc ON sc.sku = sms.sku
         {where}
-        ORDER BY sku, order_month
+        ORDER BY sms.sku, sms.order_month
     """
 
     with get_db() as conn:
@@ -204,6 +315,15 @@ def sync_trigger(
     return {"started": True}
 
 
+@app.post("/api/returns/reaggregate")
+def reaggregate_returns(x_portal_password: Optional[str] = Header(default=None)):
+    require_auth(x_portal_password)
+    started = trigger_reaggregate()
+    if not started:
+        raise HTTPException(status_code=409, detail="Sync already running")
+    return {"started": True}
+
+
 # ── Settings ──────────────────────────────────────────────────────────────────
 
 class SettingsPayload(BaseModel):
@@ -272,15 +392,18 @@ def _threshold_sql():
                 ) AS rn
             FROM sku_monthly_stats sms
             JOIN sku_config sc ON sc.sku = sms.sku
-            WHERE (
-                    sc.return_window_days = 100
-                    AND sms.is_100d_closed
-                    AND sms.return_rate_100d IS NOT NULL
-                )
-                OR (
-                    sc.return_window_days <> 100
-                    AND sms.is_30d_closed
-                    AND sms.return_rate_30d IS NOT NULL
+            WHERE sc.is_active = TRUE
+              AND (
+                    (
+                        sc.return_window_days = 100
+                        AND sms.is_100d_closed
+                        AND sms.return_rate_100d IS NOT NULL
+                    )
+                    OR (
+                        sc.return_window_days <> 100
+                        AND sms.is_30d_closed
+                        AND sms.return_rate_30d IS NOT NULL
+                    )
                 )
         ),
         trailing_thresholds AS (
@@ -299,6 +422,7 @@ def _threshold_sql():
             COALESCE(tt.months_count, 0) AS months_count
         FROM sku_config sc
         LEFT JOIN trailing_thresholds tt ON tt.sku = sc.sku
+        WHERE sc.is_active = TRUE
         ORDER BY sc.sku
     """
 

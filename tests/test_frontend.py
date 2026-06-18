@@ -72,6 +72,7 @@ def test_endpoints_referenced_match_backend():
         "/api/skus",
         "/api/returns",
         "/api/returns/export",
+        "/api/returns/reaggregate",
         "/api/sync/status",
         "/api/sync/trigger",
         "/api/settings",
@@ -170,6 +171,23 @@ def test_settings_use_sku_threshold_overrides():
     assert "thresholdOverrides[sku]" in HTML
     assert "autoThresholdFor(sku)" in HTML
     assert "thresholdOverridePayload()" in HTML
+
+
+def test_settings_has_editable_sku_catalog():
+    assert "SKU CATALOG" in HTML
+    assert "skuCatalogDraft" in HTML
+    assert "addCatalogRow()" in HTML
+    assert "saveSkuCatalog(false)" in HTML
+    assert "saveSkuCatalog(true)" in HTML
+    assert "/api/skus?reaggregate=false" in HTML
+    assert "/api/returns/reaggregate" in HTML
+
+
+def test_frontend_uses_api_catalog_for_product_names():
+    assert "const SKU_PRODUCT" not in HTML
+    assert "this.skuProductMap" in HTML
+    assert "productNameForSku(r.sku)" in HTML
+    assert "/api/skus?include_inactive=true" in HTML
 
 
 def test_settings_document_threshold_calculation_and_override():

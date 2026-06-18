@@ -171,6 +171,25 @@
   }
   .settings-note strong { color: var(--text); }
   .settings-actions { display: flex; gap: 10px; justify-content: flex-end; margin-top: 8px; }
+  .sku-catalog {
+    max-height: 320px; overflow-y: auto; border: 1px solid var(--border); border-radius: 7px;
+  }
+  .sku-catalog-row {
+    display: grid; grid-template-columns: minmax(180px, 1.2fr) minmax(150px, 1fr) 82px 70px 86px;
+    align-items: center; gap: 8px; padding: 7px 10px; border-bottom: 1px solid var(--border);
+  }
+  .sku-catalog-row:last-child { border-bottom: none; }
+  .sku-catalog-head {
+    position: sticky; top: 0; z-index: 1; background: #f8fafc;
+    font-size: 11px; font-weight: 700; color: var(--muted); letter-spacing: .04em;
+  }
+  .sku-catalog input[type=text], .sku-catalog select {
+    width: 100%; padding: 6px 8px; border: 1px solid var(--border); border-radius: 5px;
+    font-size: 13px; outline: none; background: #fff;
+  }
+  .sku-catalog input[type=text]:focus, .sku-catalog select:focus { border-color: var(--accent); }
+  .sku-catalog input[disabled] { color: var(--muted); background: #f8fafc; }
+  .catalog-status { min-height: 18px; font-size: 12px; color: var(--muted); }
   .docs-card {
     background: var(--surface); border-radius: 12px; padding: 32px;
     width: 680px; max-height: 90vh; overflow-y: auto;
@@ -349,6 +368,53 @@
     </div>
 
     <div class="settings-row" style="margin-bottom:8px">
+      <label>SKU CATALOG</label>
+      <div class="settings-note">
+        Active SKUs are included in sync, reporting, product filters, and threshold calculations.
+        New SKUs need a full resync before old Shopify orders can appear.
+      </div>
+      <div class="catalog-status" x-text="skuCatalogError"></div>
+      <div class="sku-catalog">
+        <div class="sku-catalog-row sku-catalog-head">
+          <span>SKU</span>
+          <span>PRODUCT</span>
+          <span style="text-align:right">TRIAL</span>
+          <span style="text-align:center">ACTIVE</span>
+          <span></span>
+        </div>
+        <template x-for="row in skuCatalogDraft" :key="row._key">
+          <div class="sku-catalog-row">
+            <input type="text" x-model.trim="row.sku" :disabled="!row._isNew" placeholder="MS...">
+            <input type="text" x-model.trim="row.product_name" placeholder="Product name">
+            <select x-model.number="row.return_window_days">
+              <option :value="30">30d</option>
+              <option :value="100">100d</option>
+            </select>
+            <div style="display:flex;justify-content:center">
+              <input type="checkbox" x-model="row.is_active">
+            </div>
+            <button class="btn btn-outline"
+                    style="padding:6px 10px;justify-content:center"
+                    @click="removeCatalogRow(row)"
+                    x-text="row._isNew ? 'Remove' : (row.is_active ? 'Deactivate' : 'Reactivate')">
+            </button>
+          </div>
+        </template>
+      </div>
+      <div style="display:flex;justify-content:space-between;gap:10px;margin-top:10px;align-items:center">
+        <button class="btn btn-outline" @click="addCatalogRow()">+ Add SKU</button>
+        <div style="display:flex;gap:10px">
+          <button class="btn btn-outline" @click="saveSkuCatalog(false)" :disabled="skuCatalogSaving">
+            <span x-text="skuCatalogSaving ? 'Saving…' : 'Save catalog'"></span>
+          </button>
+          <button class="btn btn-primary" @click="saveSkuCatalog(true)" :disabled="skuCatalogSaving || syncRunning">
+            Save + full resync
+          </button>
+        </div>
+      </div>
+    </div>
+
+    <div class="settings-row" style="margin-bottom:8px">
       <label>SKU RETURN RATE THRESHOLDS (%)</label>
       <div class="settings-note">
         <strong>Auto</strong> is each SKU's average return rate across its latest 12 closed order months:
@@ -457,163 +523,6 @@ const PALETTE = [
   '#06b6d4','#f97316','#84cc16',
 ];
 
-      const SKU_PRODUCT = {
-        'MS.DUVT.COOL.135x200':'Duvet Pro',
-        'MS.DUVT.COOL.155x220':'Duvet Pro',
-        'MS.DUVT.WHIT.135x200':'Duvet',
-        'MS.DUVT.WHIT.155x220':'Duvet',
-        'MS.DUVT.WHIT.200x200':'Duvet',
-        'MS.DUVT.WHIT.220x240':'Duvet',
-        'MS.COVR.DUVT.BEIG.135x200':'Duvet Cover',
-        'MS.COVR.DUVT.BEIG.155x220':'Duvet Cover',
-        'MS.COVR.DUVT.BEIG.200x200':'Duvet Cover',
-        'MS.COVR.DUVT.BEIG.240x220':'Duvet Cover',
-        'MS.COVR.DUVT.BEIS.135x200':'Duvet Cover',
-        'MS.COVR.DUVT.BEIS.155x220':'Duvet Cover',
-        'MS.COVR.DUVT.BEIS.200x200':'Duvet Cover',
-        'MS.COVR.DUVT.BEIS.240x220':'Duvet Cover',
-        'MS.COVR.DUVT.GREY.135x200':'Duvet Cover',
-        'MS.COVR.DUVT.GREY.155x220':'Duvet Cover',
-        'MS.COVR.DUVT.GREY.200x200':'Duvet Cover',
-        'MS.COVR.DUVT.GREY.240x220':'Duvet Cover',
-        'MS.COVR.DUVT.GRYS.135x200':'Duvet Cover',
-        'MS.COVR.DUVT.GRYS.155x220':'Duvet Cover',
-        'MS.COVR.DUVT.GRYS.200x200':'Duvet Cover',
-        'MS.COVR.DUVT.GRYS.240x220':'Duvet Cover',
-        'MS.COVR.DUVT.WHIT.135x200':'Duvet Cover',
-        'MS.COVR.DUVT.WHIT.155x220':'Duvet Cover',
-        'MS.COVR.DUVT.WHIT.200x200':'Duvet Cover',
-        'MS.COVR.DUVT.WHIT.240x220':'Duvet Cover',
-        'MS.COVR.DUVT.WHTS.135x200':'Duvet Cover',
-        'MS.COVR.DUVT.WHTS.155x220':'Duvet Cover',
-        'MS.COVR.DUVT.WHTS.200x200':'Duvet Cover',
-        'MS.COVR.DUVT.WHTS.240x220':'Duvet Cover',
-        'MS.BAGS.FILL':'Filling Bag',
-        'MS.BSHT.FITT.BEIG.100x200':'Fitted Sheet',
-        'MS.BSHT.FITT.BEIG.140x200':'Fitted Sheet',
-        'MS.BSHT.FITT.BEIG.160x200':'Fitted Sheet',
-        'MS.BSHT.FITT.BEIG.180x200':'Fitted Sheet',
-        'MS.BSHT.FITT.BEIS.100x200':'Fitted Sheet',
-        'MS.BSHT.FITT.BEIS.140x200':'Fitted Sheet',
-        'MS.BSHT.FITT.BEIS.160x200':'Fitted Sheet',
-        'MS.BSHT.FITT.BEIS.180x200':'Fitted Sheet',
-        'MS.BSHT.FITT.GREY.100x200':'Fitted Sheet',
-        'MS.BSHT.FITT.GREY.140x200':'Fitted Sheet',
-        'MS.BSHT.FITT.GREY.160x200':'Fitted Sheet',
-        'MS.BSHT.FITT.GREY.180x200':'Fitted Sheet',
-        'MS.BSHT.FITT.GRYS.100x200':'Fitted Sheet',
-        'MS.BSHT.FITT.GRYS.140x200':'Fitted Sheet',
-        'MS.BSHT.FITT.GRYS.160x200':'Fitted Sheet',
-        'MS.BSHT.FITT.GRYS.180x200':'Fitted Sheet',
-        'MS.BSHT.FITT.WHIT.100x200':'Fitted Sheet',
-        'MS.BSHT.FITT.WHIT.140x200':'Fitted Sheet',
-        'MS.BSHT.FITT.WHIT.160x200':'Fitted Sheet',
-        'MS.BSHT.FITT.WHIT.180x200':'Fitted Sheet',
-        'MS.BSHT.FITT.WHTS.100x200':'Fitted Sheet',
-        'MS.BSHT.FITT.WHTS.140x200':'Fitted Sheet',
-        'MS.BSHT.FITT.WHTS.160x200':'Fitted Sheet',
-        'MS.BSHT.FITT.WHTS.180x200':'Fitted Sheet',
-        'MS.GELCOMPRESS':'Gel',
-        'MS.CASE.HOME.BEIGE.60.40.REN':'Home Basic Pillowcase',
-        'MS.CASE.HOME.BEIGE.80.40.REN':'Home Basic Pillowcase',
-        'MS.CASE.HOME.DARKBLUE.60.40.REN':'Home Basic Pillowcase',
-        'MS.CASE.HOME.DARKBLUE.80.40.REN':'Home Basic Pillowcase',
-        'MS.CASE.HOME.DARKGREY.60.40.REN':'Home Basic Pillowcase',
-        'MS.CASE.HOME.DARKGREY.80.40.REN':'Home Basic Pillowcase',
-        'MS.CASE.HOME.WEISS.60.40':'Home Basic Pillowcase',
-        'MS.CASE.HOME.WEISS.80.40':'Home Basic Pillowcase',
-        'MS.HOME.60x40.A1':'Home Pillow',
-        'MS.HOME.80x40.A1':'Home Pillow',
-        'MS.CASE.HOME.BEIG.60x40':'Home Premium Pillowcase',
-        'MS.CASE.HOME.BEIG.80x40':'Home Premium Pillowcase',
-        'MS.CASE.HOME.BLUE.60x40':'Home Premium Pillowcase',
-        'MS.CASE.HOME.BLUE.80x40':'Home Premium Pillowcase',
-        'MS.CASE.HOME.GREY.60x40':'Home Premium Pillowcase',
-        'MS.CASE.HOME.GREY.80x40':'Home Premium Pillowcase',
-        'MS.CASE.HOME.NAVY.60x40':'Home Premium Pillowcase',
-        'MS.CASE.HOME.NAVY.80x40':'Home Premium Pillowcase',
-        'MS.CASE.HOME.REDD.60x40':'Home Premium Pillowcase',
-        'MS.CASE.HOME.REDD.80x40':'Home Premium Pillowcase',
-        'MS.CASE.HOME.WHIT.60x40':'Home Premium Pillowcase',
-        'MS.CASE.HOME.WHIT.80x40':'Home Premium Pillowcase',
-        'MS.HOME.COOL.80x40':'Home Pro Pillow',
-        'MS.HEADPART.H1.60':'Inlet',
-        'MS.HEADPART.H1.80':'Inlet',
-        'MS.HEADPART.H2.60':'Inlet',
-        'MS.HEADPART.H2.80':'Inlet',
-        'MS.HEADPART.KAP.60':'Inlet',
-        'MS.HEADPART.KAP.80':'Inlet',
-        'MS.HEADPART.STONEPINE.60':'Inlet',
-        'MS.HEADPART.STONEPINE.80':'Inlet',
-        'MS.HEADPART.WOOL.60':'Inlet',
-        'MS.HEADPART.WOOL.80':'Inlet',
-        'MS.NECKROLL.H1.60':'Inlet',
-        'MS.NECKROLL.H1.80':'Inlet',
-        'MS.NECKROLL.H2.60':'Inlet',
-        'MS.NECKROLL.H2.80':'Inlet',
-        'MS.NECKROLL.KAP.60':'Inlet',
-        'MS.NECKROLL.KAP.80':'Inlet',
-        'MS.NECKROLL.STONEPINE.60':'Inlet',
-        'MS.NECKROLL.STONEPINE.80':'Inlet',
-        'MS.NECKROLL.WOOL.60':'Inlet',
-        'MS.NECKROLL.WOOL.80':'Inlet',
-        'MS.FCOVER.40x35':'Inlet Cover',
-        'MS.FCOVER.60x40':'Inlet Cover',
-        'MS.FCOVER.80x40':'Inlet Cover',
-        'MS.HEAD.40x35':'Inlet Cover',
-        'MS.HEAD.60x40':'Inlet Cover',
-        'MS.HEAD.80x40':'Inlet Cover',
-        'MS.NECK.40x35':'Inlet Cover',
-        'MS.NECK.60x40':'Inlet Cover',
-        'MS.NECK.80x40':'Inlet Cover',
-        'MS.KIDS.WHITE':'Kids Pillow',
-        'MS.CASE.KIDS.CARS.30.40':'Kids Pillowcase',
-        'MS.CASE.KIDS.STARS.30.40':'Kids Pillowcase',
-        'MS.CASE.KIDS.STARS.MOON.30.40':'Kids Pillowcase',
-        'MS.COAT.VLVT.BLCK.102':'Kuschelmantel',
-        'MS.COAT.VLVT.NAVY.102':'Kuschelmantel',
-        'MS.FILLING.KAPOK':'Loose Fillings',
-        'MS.FILLING.MEDLINE':'Loose Fillings',
-        'MS.FILLING.SOFT':'Loose Fillings',
-        'MS.FILLING.STONEPINE':'Loose Fillings',
-        'MS.FILLING.WOOL':'Loose Fillings',
-        'MS.CSHN.BACK.BLCK':'Seat Cushion',
-        'MS.CSHN.SEAT.BLCK':'Seat Cushion',
-        'MS.CASE.SILK.GREY.60x40':'Silk Pillowcase',
-        'MS.CASE.SILK.GREY.80x40':'Silk Pillowcase',
-        'MS.CASE.SILK.IVRY.60x40':'Silk Pillowcase',
-        'MS.CASE.SILK.IVRY.80x40':'Silk Pillowcase',
-        'MS.CASE.SILK.LILA.60x40':'Silk Pillowcase',
-        'MS.CASE.SILK.LILA.80x40':'Silk Pillowcase',
-        'MS.CASE.SILK.NAVY.60x40':'Silk Pillowcase',
-        'MS.CASE.SILK.NAVY.80x40':'Silk Pillowcase',
-        'MS.CASE.SILK.PINK.60x40':'Silk Pillowcase',
-        'MS.CASE.SILK.PINK.80x40':'Silk Pillowcase',
-        'MS.CASE.SILK.PIST.60x40':'Silk Pillowcase',
-        'MS.CASE.SILK.PIST.80x40':'Silk Pillowcase',
-        'MS.CASE.SILK.ROSE.60x40':'Silk Pillowcase',
-        'MS.CASE.SILK.ROSE.80x40':'Silk Pillowcase',
-        'MS.MASK.GREY':'Sleep Mask',
-        'MS.MASK.IVRY':'Sleep Mask',
-        'MS.MASK.NAVY':'Sleep Mask',
-        'MS.MASK.ROSE':'Sleep Mask',
-        'MS.SPRAY.LAVENDEL':'Spray',
-        'MS.SPRAY.LEMEUKA':'Spray',
-        'MS.SPRAY.LEMROSE':'Spray',
-        'MS.SPRAY.ORANGE':'Spray',
-        'MS.SPRAY.STONEPINE':'Spray',
-        'MS.BAGS.TRVL.BLUE.40x35':'Travel Bag',
-        'MS.CASE.TRAVEL.BLUE.MOTTLED.35.40':'Travel Basic Pillowcase',
-        'MS.CASE.TRAVEL.GRAY.MOTTLED.35.40':'Travel Basic Pillowcase',
-        'MS.CASE.TRAVEL.GREEN.MOTTLED.35.40':'Travel Basic Pillowcase',
-        'MS.PILW.TRVL.WHIT.40x35':'Travel Pillow',
-        'MS.TRAVEL.WHITE.H1':'Travel Pillow',
-        'MS.CASE.TRVL.BEIG.40x35':'Travel Premium Pillowcase',
-        'MS.CASE.TRVL.BLUE.40x35':'Travel Premium Pillowcase',
-        'MS.CASE.TRVL.GREY.40x35':'Travel Premium Pillowcase',
-        'MS.CASE.TRVL.NAVY.40x35':'Travel Premium Pillowcase',
-        'MS.CASE.TRVL.REDD.40x35':'Travel Premium Pillowcase',
-      };
 
 function portal() {
   return {
@@ -626,6 +535,8 @@ function portal() {
     // Data
     rows: [],
     allSkus: [],
+    activeSkus: [],
+    skuProductMap: {},
     loading: false,
 
     // Filters
@@ -659,6 +570,10 @@ function portal() {
     thresholdMeta: {},
     thresholdSkuList: [],
     savingSettings: false,
+    skuCatalogDraft: [],
+    skuCatalogSaving: false,
+    skuCatalogError: '',
+    nextCatalogKey: 1,
 
     // ── Init ──────────────────────────────────────────────────────────────
     async init() {
@@ -727,8 +642,15 @@ function portal() {
 
     // ── Load helpers ──────────────────────────────────────────────────────
     async loadSkus() {
-      this.allSkus = await this.api('GET', '/api/skus');
-      this.thresholdSkuList = this.allSkus.map(s => s.sku);
+      this.allSkus = await this.api('GET', '/api/skus?include_inactive=true');
+      this.activeSkus = this.allSkus.filter(s => s.is_active);
+      this.skuProductMap = Object.fromEntries(this.allSkus.map(s => [s.sku, s.product_name || s.sku]));
+      this.thresholdSkuList = this.activeSkus.map(s => s.sku);
+      this.skuCatalogDraft = this.allSkus.map(s => ({
+        ...s,
+        _isNew: false,
+        _key: s.sku,
+      }));
       this.$nextTick(() => this.initTomSelect());
     },
 
@@ -909,24 +831,28 @@ function portal() {
       }
     },
 
+    productNameForSku(sku) {
+      return this.skuProductMap[sku] || sku;
+    },
+
     getDisplayRows() {
       // Apply product filter first (client-side)
       const sel = this.selectedProducts;
       const base = sel.length
-        ? this.rows.filter(r => sel.includes(SKU_PRODUCT[r.sku] || r.sku))
+        ? this.rows.filter(r => sel.includes(this.productNameForSku(r.sku)))
         : this.rows;
 
       if (this.viewLevel === 'sku') {
         return base.map(r => ({
           ...r,
-          product_name: SKU_PRODUCT[r.sku] || r.sku,
+          product_name: this.productNameForSku(r.sku),
           threshold_pct: this.thresholdForSku(r.sku),
         }));
       }
       // Product-level: aggregate by (product_name, order_month)
       const map = {};
       for (const r of base) {
-        const prod = SKU_PRODUCT[r.sku] || r.sku;
+        const prod = this.productNameForSku(r.sku);
         const key  = `${prod}||${r.order_month}`;
         if (!map[key]) {
           map[key] = { product_name: prod, order_month: r.order_month,
@@ -1018,7 +944,7 @@ function portal() {
     // ── Tom Select ────────────────────────────────────────────────────────
     initProductSelect() {
       if (this.tomSelectProduct) { this.tomSelectProduct.destroy(); }
-      const products = [...new Set(Object.values(SKU_PRODUCT))].sort();
+      const products = [...new Set(this.activeSkus.map(s => s.product_name || s.sku))].sort();
       const self = this;
       this.tomSelectProduct = new TomSelect('#product-select', {
         plugins: ['remove_button'],
@@ -1040,7 +966,7 @@ function portal() {
 
     initTomSelect() {
       if (this.tomSelect) { this.tomSelect.destroy(); }
-      const options = this.allSkus.map(s => ({
+      const options = this.activeSkus.map(s => ({
         value: s.sku,
         text:  s.sku,
         label: s.return_window_days === 100 ? '100d' : '30d',
@@ -1227,6 +1153,103 @@ function portal() {
     },
 
     // ── Settings ─────────────────────────────────────────────────────────
+    addCatalogRow() {
+      this.skuCatalogDraft = [
+        ...this.skuCatalogDraft,
+        {
+          sku: '',
+          product_name: '',
+          return_window_days: 30,
+          is_active: true,
+          _isNew: true,
+          _key: `new-${this.nextCatalogKey++}`,
+        },
+      ];
+    },
+
+    removeCatalogRow(row) {
+      if (row._isNew) {
+        this.skuCatalogDraft = this.skuCatalogDraft.filter(r => r._key !== row._key);
+      } else {
+        row.is_active = !row.is_active;
+      }
+    },
+
+    catalogRowsToSave() {
+      const rows = this.skuCatalogDraft
+        .map(r => ({
+          ...r,
+          sku: String(r.sku || '').trim(),
+          product_name: String(r.product_name || '').trim(),
+          return_window_days: Number(r.return_window_days),
+          is_active: !!r.is_active,
+        }))
+        .filter(r => !r._isNew || r.sku || r.product_name);
+
+      const seen = new Set();
+      for (const row of rows) {
+        if (!row.sku) throw new Error('Every catalog row needs a SKU.');
+        if (!row.product_name) throw new Error(`Product name is missing for ${row.sku}.`);
+        if (![30, 100].includes(row.return_window_days)) throw new Error(`Return window must be 30d or 100d for ${row.sku}.`);
+        if (seen.has(row.sku)) throw new Error(`Duplicate SKU: ${row.sku}`);
+        seen.add(row.sku);
+      }
+      return rows;
+    },
+
+    async saveSkuCatalog(forceFullSync = false) {
+      this.skuCatalogSaving = true;
+      this.skuCatalogError = '';
+      try {
+        const rows = this.catalogRowsToSave();
+        const originalBySku = new Map(this.allSkus.map(s => [s.sku, s]));
+        const calls = [];
+
+        for (const row of rows) {
+          const payload = {
+            product_name: row.product_name,
+            return_window_days: row.return_window_days,
+            is_active: row.is_active,
+          };
+          const original = originalBySku.get(row.sku);
+          if (row._isNew || !original) {
+            calls.push(this.api('POST', '/api/skus?reaggregate=false', { sku: row.sku, ...payload }));
+          } else if (
+            original.product_name !== row.product_name ||
+            Number(original.return_window_days) !== row.return_window_days ||
+            !!original.is_active !== row.is_active
+          ) {
+            calls.push(this.api('PATCH', `/api/skus/${encodeURIComponent(row.sku)}?reaggregate=false`, payload));
+          }
+        }
+
+        if (!calls.length) {
+          this.skuCatalogError = 'No SKU catalog changes to save.';
+          return;
+        }
+
+        await Promise.all(calls);
+        this.selectedSkus = [];
+        this.selectedProducts = [];
+        await this.loadSkus();
+        this.$nextTick(() => this.initProductSelect());
+
+        if (forceFullSync) {
+          await this.api('POST', '/api/sync/trigger?force=true');
+          this.showSettings = false;
+          this.startSyncPoll();
+        } else {
+          await this.api('POST', '/api/returns/reaggregate');
+          this.skuCatalogError = 'SKU catalog saved.';
+          setTimeout(() => this.loadData(), 1500);
+        }
+      } catch(e) {
+        this.skuCatalogError = e.message || 'Failed to save SKU catalog.';
+      } finally {
+        this.skuCatalogSaving = false;
+      }
+    },
+
     async saveSettings() {
       this.savingSettings = true;
       try {

@@ -102,6 +102,12 @@ def test_return_window_check_constraint(sql):
     assert "CHECK (return_window_days IN (30, 100))" in sql
 
 
+def test_sku_config_has_catalog_columns(sql):
+    assert "product_name" in sql
+    assert "is_active" in sql
+    assert "updated_at" in sql
+
+
 def test_quantity_positive_constraint(sql):
     assert "CHECK (quantity > 0)" in sql
 

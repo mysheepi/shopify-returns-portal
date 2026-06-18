@@ -21,7 +21,7 @@ def run_aggregation(conn):
             SUM(oli.unit_price * oli.quantity)         AS total_revenue,
             MAX(oli.order_date)                        AS last_order_date
         FROM order_line_items oli
-        JOIN sku_config sc ON sc.sku = oli.sku
+        JOIN sku_config sc ON sc.sku = oli.sku AND sc.is_active = TRUE
         WHERE DATE_TRUNC('month', oli.order_date) < DATE_TRUNC('month', CURRENT_DATE)
         GROUP BY oli.sku, DATE_TRUNC('month', oli.order_date)
     ),
@@ -83,7 +83,7 @@ def run_aggregation(conn):
         now()                                                                  AS refreshed_at
 
     FROM ordered o
-    JOIN sku_config sc ON sc.sku = o.sku
+    JOIN sku_config sc ON sc.sku = o.sku AND sc.is_active = TRUE
     LEFT JOIN returned r ON r.sku = o.sku AND r.order_month = o.order_month
 
     ON CONFLICT (sku, order_month) DO UPDATE SET

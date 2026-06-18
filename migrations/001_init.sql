@@ -39,7 +39,11 @@ CREATE INDEX IF NOT EXISTS idx_rli_order_date ON refund_line_items(order_date);
 
 CREATE TABLE IF NOT EXISTS sku_config (
     sku                 VARCHAR(120) PRIMARY KEY,
-    return_window_days  INT NOT NULL CHECK (return_window_days IN (30, 100))
+    return_window_days  INT NOT NULL CHECK (return_window_days IN (30, 100)),
+    product_name        TEXT NOT NULL DEFAULT '',
+    is_active           BOOLEAN NOT NULL DEFAULT TRUE,
+    created_at          TIMESTAMPTZ DEFAULT now(),
+    updated_at          TIMESTAMPTZ DEFAULT now()
 );
 
 CREATE TABLE IF NOT EXISTS settings (
